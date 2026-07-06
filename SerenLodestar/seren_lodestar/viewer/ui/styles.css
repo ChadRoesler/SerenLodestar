@@ -1,0 +1,728 @@
+/* ════════════════════════════════════════════════════════════════════
+ *  SerenLodestar viewer — leaf styles (the cluster dashboard).
+ *  The SerenMeninges shell ships the page skeleton, header (brand +
+ *  subtitle), 🔑 token modal, tabbar, and the base tokens. This leaf
+ *  brings the whole cluster-dashboard look: node grid, drill-down modal,
+ *  reboot/update state machine, touchscreen layout.
+ *  Identity: butter gold (#F5D76E) — "gold = the head."
+ *
+ *  Carved from the pre-baseplate monolith: same component CSS, minus the
+ *  <header>/<html,body> rules the shell now owns, with the accent swapped
+ *  from electric-purple to butter-gold and dark --on-accent text added so
+ *  gold-filled buttons stay legible.
+ * ════════════════════════════════════════════════════════════════════ */
+
+:root {
+    /* Backgrounds - darkest at page, lighter on cards */
+    --bg-page: #0F1222;          /* deep space navy */
+    --bg-card: #13151E;          /* node cards, modal */
+    --bg-row: #29326D;           /* interactive rows, headers */
+    --bg-row-selected: #131732;
+    --bg-overlay: #0B1026E6;     /* modal backdrop dim */
+    /* Borders - subtle hairlines, brighter on hover/focus */
+    --border: #1E2A78;           /* card edges, dividers */
+    --border-hi: #C9A227;        /* gold hover/focus ring (was purple) */
+    /* Text - light on dark, three tiers of emphasis */
+    --text-hi: #E6F0FF;
+    --text-mid: #B7C5E0;
+    --text-lo: #6A7AA0;
+    /* Status - running/loading/down/library, plus thermal */
+    --status-ok: #B7FF4C;
+    --status-warn: #FFD23F;
+    --status-down: #FF4D6D;
+    --status-hot: #FF7A48;
+    --status-lib: #6FF3D6;
+    /* Accent - butter gold identity (was electric purple) */
+    --accent: #F5D76E;           /* butter gold - primary interactive, focus */
+    --accent-strong: #FFC94D;    /* brighter amber-gold - high-emphasis */
+    --accent-info: #00C2C7;      /* cyan - informational, links */
+    --on-accent: #14141f;        /* dark text on an accent-filled surface */
+
+    --radius: 6px;
+    --gap: 12px;
+    --pad: 14px;
+}
+
+* { box-sizing: border-box; }
+
+/* ---------------------------------------------------------------------
+*  TOUCH DEFAULTS - applied only to touch-primary devices (the GeeekPi
+*  touchscreen on the NUC). Desktop mice get pointer:fine and skip this.
+*  Kills tap-select / long-press callout / tap-highlight / double-tap-zoom;
+*  keeps scrolling and re-enables text selection in log panes.
+* --------------------------------------------------------------------- */
+@media (pointer: coarse) {
+    * {
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+    }
+    .svc-drill-logs,
+    .svc-drill-logs * {
+        user-select: text;
+        -webkit-user-select: text;
+        -webkit-touch-callout: default;
+    }
+}
+
+/* ---------------------------------------------------------------------
+*  HEADER ASIDE - the overall LED + last-refresh (shell owns the header
+*  bar itself; these are the widgets slotted into its right side).
+* --------------------------------------------------------------------- */
+#led-overall { display: inline-flex; align-items: center; }
+#led-text { color: var(--text-lo); font-size: 12px; }
+#last-refresh { color: var(--text-lo); font-size: 12px; }
+
+/* Big LED - single rollup status indicator. */
+.led {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--status-down);
+    margin-right: 6px;
+    vertical-align: middle;
+}
+    .led.ok { background: var(--status-ok); }
+    .led.warn { background: var(--status-warn); }
+    .led.gap { background: var(--status-hot); }
+    .led.down { background: var(--status-down); }
+
+/* ---------------------------------------------------------------------
+*  NODE GRID
+* --------------------------------------------------------------------- */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--gap);
+}
+
+.node {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: calc(var(--pad)/2);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    display: flex;
+    flex-direction: column;
+    min-height: 220px;
+}
+    .node:hover { border-color: var(--border-hi); }
+    .node.offline { opacity: 0.6; }
+
+/* ---------------------------------------------------------------------
+*  ACTIONS CARD - the card-shaped grid item housing settings + refresh.
+* --------------------------------------------------------------------- */
+.actions-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--pad);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--gap);
+    min-height: 220px;
+}
+
+.actions-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-hi);
+    font-family: inherit;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    padding: 0;
+}
+    .actions-btn:hover:not(:disabled) {
+        border-color: var(--accent);
+        background: var(--bg-row);
+    }
+    .actions-btn:disabled { opacity: 0.4; cursor: default; }
+    .actions-btn .actions-icon { font-size: 32px; line-height: 1; color: var(--accent); }
+    .actions-btn .actions-label { font-size: 12px; color: var(--text-mid); }
+
+.node-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.node-ip {
+    font-size: 11px;
+    color: var(--text-lo);
+    margin-bottom: 6px;
+}
+
+/* Service rows table-style for column alignment */
+.svc-list {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 4px 12px;
+    align-content: start;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+    .svc-list .svc-name { color: var(--text-hi); }
+        .svc-list .svc-name .svc-badge {
+            display: inline-block;
+            margin-right: 0.35em;
+            font-size: 0.85em;
+            cursor: help;
+            opacity: 0.85;
+            vertical-align: -1px;
+        }
+    .svc-list .svc-mem { color: var(--text-mid); text-align: right; }
+    .svc-list .svc-stat { text-align: center; font-size: 12px; font-weight: bold; width: 1em; }
+
+.svc-stat.ok { color: var(--status-ok); }
+.svc-stat.warn { color: var(--status-warn); }
+.svc-stat.down { color: var(--status-down); }
+
+.svc-list .svc-empty {
+    grid-column: 1 / -1;
+    color: var(--text-lo);
+    font-style: italic;
+    text-align: center;
+    padding: 20px 0;
+}
+
+/* Footer of the node card - temp + memory total */
+.node-footer {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    font-size: 12px;
+    color: var(--text-mid);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+    .node-footer .row { display: flex; justify-content: space-between; }
+
+.temp-hot { color: var(--status-hot); animation: pulse 1.5s ease-in-out infinite; }
+.temp-danger { color: var(--status-down); font-weight: bold; animation: pulse 0.6s ease-in-out infinite; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes header-bg-pulse {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: color-mix(in srgb, var(--status-down) 18%, transparent); }
+}
+.node-header-danger { border-radius: var(--radius); animation: header-bg-pulse 0.6s ease-in-out infinite; }
+
+/* ---------------------------------------------------------------------
+*  CAPABILITY GAPS STRIP
+* --------------------------------------------------------------------- */
+.gaps {
+    margin-top: var(--gap);
+    padding: 10px var(--pad);
+    border: 1px solid var(--status-down);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    font-size: 13px;
+}
+    .gaps strong { color: var(--status-down); }
+    .gaps .gap-list { margin-top: 4px; color: var(--text-mid); }
+
+/* ---------------------------------------------------------------------
+*  SETTINGS MODAL
+* --------------------------------------------------------------------- */
+.settings-modal { width: min(560px, 95vw); height: auto; max-height: 90vh; }
+
+.settings-body {
+    padding: var(--pad);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    font-size: 13px;
+}
+
+.settings-body .update-nodes-btn {
+    background: transparent;
+    color: var(--status-warn);
+    border: 1px solid var(--status-warn);
+    padding: 12px 20px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    align-self: flex-start;
+}
+    .settings-body .update-nodes-btn:hover:not(:disabled) { background: var(--status-warn); color: var(--bg-page); }
+    .settings-body .update-nodes-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.settings-body .update-result { font-size: 11px; color: var(--text-lo); line-height: 1.6; white-space: pre-wrap; }
+    .settings-body .update-result.ok { color: var(--status-ok); }
+    .settings-body .update-result.err { color: var(--status-down); }
+
+.settings-body .hint { color: var(--text-lo); font-size: 11px; line-height: 1.5; }
+.settings-body .hint code {
+    background: var(--bg-page);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+}
+
+/* ---------------------------------------------------------------------
+*  ERROR BANNER
+* --------------------------------------------------------------------- */
+.banner {
+    padding: 10px 16px;
+    background: var(--status-down);
+    color: var(--bg-page);
+    font-weight: 600;
+    text-align: center;
+    display: none;
+    border-radius: var(--radius);
+    margin-bottom: var(--gap);
+}
+    .banner.visible { display: block; }
+
+/* ---------------------------------------------------------------------
+* MODAL-LOCAL FLASH MESSAGE - per-node action results overlay the modal top.
+* --------------------------------------------------------------------- */
+.modal-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: var(--radius) var(--radius) 0 0;
+    z-index: 20;
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+    .modal-flash.visible { display: flex; }
+    .modal-flash.flash-ok { background: var(--status-ok); color: #061a0d; }
+    .modal-flash.flash-err { background: var(--status-down); color: #fff; }
+    .modal-flash.flash-info { background: var(--accent); color: var(--on-accent); }
+    .modal-flash .flash-msg { flex: 1; white-space: pre-wrap; }
+    .modal-flash .flash-close {
+        background: transparent;
+        border: none;
+        color: inherit;
+        font-size: 18px;
+        cursor: pointer;
+        line-height: 1;
+        padding: 2px 8px;
+        opacity: 0.8;
+    }
+        .modal-flash .flash-close:hover { opacity: 1; }
+
+/* ---------------------------------------------------------------------
+* MODAL - drill-down. backdrop covers screen, panel centered.
+* --------------------------------------------------------------------- */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-overlay);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    column-gap: 24px;
+    z-index: 100;
+}
+    .modal-backdrop.visible { display: flex; }
+
+.modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--radius);
+    width: min(1100px, 95vw);
+    height: min(650px, 90vh);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--pad);
+    border-bottom: 1px solid var(--border);
+    min-height: 64px;
+}
+
+.modal-header-fields { display: flex; gap: 24px; flex-wrap: wrap; }
+.modal-header-field { display: flex; flex-direction: column; gap: 2px; }
+.modal-header-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-lo); }
+.modal-header-value { font-size: 18px; font-weight: 500; color: var(--text-hi); }
+
+.modal-close {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-mid);
+    font-size: 20px;
+    line-height: 1;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+    .modal-close:hover { border-color: var(--border-hi); color: var(--text-hi); }
+
+.modal-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 64px 260px;
+    min-height: 0;
+}
+
+.modal-svc-list { overflow: hidden; display: flex; flex-direction: column; }
+
+.modal-svc-header {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+    padding: 8px var(--pad);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-lo);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-row);
+}
+
+.modal-svc-rows { overflow: hidden; flex: 1; }
+
+.modal-svc-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+    align-items: center;
+    padding: 0 var(--pad);
+    height: 64px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-hi);
+    cursor: pointer;
+}
+    .modal-svc-row:hover { background: var(--bg-row-selected); }
+    .modal-svc-row .name { font-weight: 500; }
+        .modal-svc-row .name .svc-badge {
+            display: inline-block;
+            margin-right: 0.4em;
+            font-size: 0.9em;
+            cursor: help;
+            opacity: 0.85;
+            vertical-align: -1px;
+        }
+    .modal-svc-row .num,
+    .modal-svc-row .state { color: var(--text-mid); font-variant-numeric: tabular-nums; }
+        .modal-svc-row .state.running { color: var(--status-ok); }
+        .modal-svc-row .state.loading { color: var(--status-warn); }
+        .modal-svc-row .state.down { color: var(--status-down); }
+        .modal-svc-row .state.library { color: var(--status-lib); }
+
+.modal-scroll {
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+}
+.modal-scroll-btn {
+    flex: 0 0 64px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-mid);
+    font-size: 22px;
+    cursor: pointer;
+}
+    .modal-scroll-btn:last-child { border-bottom: none; border-top: 1px solid var(--border); }
+    .modal-scroll-btn:hover:not(:disabled) { color: var(--text-hi); background: var(--bg-card); }
+    .modal-scroll-btn:disabled { opacity: 0.25; cursor: default; }
+
+.modal-scroll-thumb { flex: 1; position: relative; background: var(--bg-card); }
+.modal-scroll-thumb-bar {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    background: var(--border-hi);
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+.modal-reboot {
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+    .modal-reboot:hover { background: var(--bg-row); }
+
+.modal-actions-col { border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+
+.modal-update-node {
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+    .modal-update-node:hover:not(.updating) { background: var(--bg-row); }
+    .modal-update-node.updating { opacity: 0.55; cursor: wait; }
+
+.modal-update-node-icon { font-size: 32px; color: var(--accent); line-height: 1; }
+.modal-update-node-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-mid);
+    text-align: center;
+    padding: 0 6px;
+}
+
+.modal-actions-col .modal-reboot { flex: 1; border-left: none; }
+
+.modal-reboot-icon {
+    font-size: 32px;
+    color: var(--status-down);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.modal-reboot-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-mid);
+    text-align: center;
+    padding: 0 6px;
+}
+
+/* -- Confirm state -- */
+.modal-confirm {
+    grid-column: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: var(--pad);
+}
+.modal-confirm-title { font-size: 22px; color: var(--text-hi); }
+.modal-confirm-subtitle {
+    font-size: 13px;
+    color: var(--text-mid);
+    max-width: 460px;
+    text-align: center;
+    line-height: 1.4;
+    margin-top: -4px;
+}
+.modal-confirm-buttons { display: flex; gap: 16px; }
+.modal-confirm-btn {
+    min-width: 140px;
+    min-height: 56px;
+    padding: 0 24px;
+    font-size: 18px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-hi);
+    background: var(--bg-row);
+    color: var(--text-hi);
+    cursor: pointer;
+}
+    .modal-confirm-btn:hover:not(:disabled) { background: var(--bg-card); border-color: var(--accent); }
+    .modal-confirm-btn:disabled { opacity: 0.35; cursor: default; }
+    .modal-confirm-btn.yes { border-color: var(--status-down); color: var(--status-down); }
+
+.modal-reboot.armed-pending { opacity: 0.35; cursor: default; }
+    .modal-reboot.armed-pending:hover { background: var(--bg-row); }
+.modal-reboot.armed-ready { background: var(--bg-card); }
+    .modal-reboot.armed-ready .modal-reboot-icon,
+    .modal-reboot.armed-ready .modal-reboot-label { color: var(--status-down); }
+
+/* Countdown state */
+.modal-countdown {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: var(--pad) calc(var(--pad) * 2);
+}
+.modal-countdown-title { font-size: 16px; color: var(--text-mid); flex: 1; min-width: 0; }
+.modal-countdown-secs {
+    font-size: 64px;
+    font-variant-numeric: tabular-nums;
+    color: var(--status-down);
+    line-height: 1;
+    flex: 0 0 auto;
+}
+.modal-countdown-cancel {
+    min-width: 180px;
+    min-height: 56px;
+    padding: 0 24px;
+    font-size: 18px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-hi);
+    background: var(--bg-row);
+    color: var(--text-hi);
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+    .modal-countdown-cancel:hover { background: var(--bg-card); border-color: var(--accent); }
+
+/* ---------------------------------------------------------------------
+* Service drill-down body layout
+* --------------------------------------------------------------------- */
+.svc-drill-main {
+    grid-column: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border);
+}
+.svc-drill-stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+}
+.svc-stat-cell {
+    background: var(--bg-card);
+    padding: 8px var(--pad);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.svc-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-lo); }
+.svc-stat-value {
+    font-size: 15px;
+    color: var(--text-hi);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+    .svc-stat-value.state.running { color: var(--status-ok); }
+    .svc-stat-value.state.loading { color: var(--status-warn); }
+    .svc-stat-value.state.down { color: var(--status-down); }
+    .svc-stat-value.state.library { color: var(--text-mid); }
+
+.svc-drill-logs-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.svc-drill-logs-header {
+    padding: 6px var(--pad);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-lo);
+    background: var(--bg-row-selected);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.svc-drill-logs-path {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-mid);
+    text-transform: none;
+    letter-spacing: 0;
+}
+.svc-drill-logs {
+    flex: 1;
+    margin: 0;
+    padding: var(--pad);
+    background: var(--bg-page);
+    color: var(--text-mid);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow: auto;
+    white-space: pre;
+    min-height: 0;
+}
+.svc-drill-actions {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    gap: 12px;
+    padding: var(--pad);
+    background: var(--bg-row);
+}
+.svc-action-btn {
+    min-height: 52px;
+    padding: 0 12px;
+    font-size: 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-hi);
+    background: var(--bg-card);
+    color: var(--text-hi);
+    cursor: pointer;
+    text-align: center;
+}
+    .svc-action-btn:hover:not(:disabled):not(.disabled) { border-color: var(--accent); }
+    .svc-action-btn:disabled,
+    .svc-action-btn.disabled { opacity: 0.35; cursor: default; }
+    .svc-action-btn.danger { border-color: var(--status-down); color: var(--status-down); }
+        .svc-action-btn.danger:hover:not(:disabled):not(.disabled) { background: var(--bg-card); }
+
+.svc-drill-libnote { font-size: 12px; color: var(--text-mid); text-align: center; padding: 8px; }
+.svc-stop-confirm { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.svc-stop-confirm-title { font-size: 14px; color: var(--text-hi); text-align: center; margin-bottom: 4px; }
+
+/* ---------------------------------------------------------------------
+* TOUCHSCREEN / SHORT-VIEWPORT OVERRIDES (1424×280 GeeekPi letterbox)
+* --------------------------------------------------------------------- */
+@media (max-height: 400px) {
+    .modal { height: 95vh; width: 98vw; }
+    .modal-header { min-height: 48px; padding: 8px var(--pad); }
+    .modal-header-value { font-size: 15px; }
+    .modal-header-fields { gap: 16px; }
+    .modal-countdown { flex-direction: row; gap: 16px; padding: 8px var(--pad); justify-content: center; }
+    .modal-countdown-title { font-size: 14px; }
+    .modal-countdown-secs { font-size: 48px; }
+    .modal-countdown-cancel { min-height: 48px; min-width: 160px; font-size: 16px; }
+    .modal-confirm { gap: 12px; padding: 8px var(--pad); }
+    .modal-confirm-title { font-size: 17px; }
+    .modal-confirm-buttons { gap: 10px; }
+    .modal-confirm-btn { min-height: 48px; min-width: 110px; font-size: 16px; padding: 0 16px; }
+    .modal-svc-row { height: 56px; }
+    .modal-svc-header { padding: 6px var(--pad); font-size: 10px; }
+    .modal-scroll-btn { flex-basis: 56px; font-size: 20px; }
+    .modal-body { grid-template-columns: 1fr 56px 220px; }
+    .modal-reboot-icon { font-size: 36px; }
+    .modal-reboot-label { font-size: 13px; }
+    .modal-update-node-icon { font-size: 32px; }
+    .modal-update-node-label { font-size: 13px; }
+}

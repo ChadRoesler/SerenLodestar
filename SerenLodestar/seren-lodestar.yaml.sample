@@ -1,0 +1,42 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  seren-lodestar.yaml - SerenLodestar cluster configuration.
+# ═══════════════════════════════════════════════════════════════════════
+
+server:
+  host: 0.0.0.0
+  port: 6361              # family convention: Lodestar
+  bearer_token: ""
+  # bearer_token_env: "SEREN_LODESTAR_BEARER_TOKEN"  # read from env
+  # bearer_token_keyring: "seren-lodestar"            # read from keyring
+
+cluster:
+  # ── Periodic discovery ──────────────────────────────────────────────
+  refresh_interval: "00:30:00"    # HH:MM:SS or bare seconds
+  discovery_timeout: "00:00:02"   # per-node probe timeout
+
+  health_strict_mode: false
+
+  # ── Node definitions ─────────────────────────────────────────────────
+  nodes:
+    - name: "orin-nano"
+      agent_url: "http://192.168.1.100:7374"
+      agent_token: ""
+      preferred_for: ["whisper", "kokoro"]
+      agent_update_path: "/home/jetson/seren-agent/seren-agent.tar.gz"
+      is_host: false
+      nickname: "nano-1"
+
+    - name: "xavier"
+      agent_url: "http://192.168.1.101:7374"
+      agent_token: ""
+      preferred_for: ["llama", "comfy"]
+      agent_update_path: "/home/jetson/seren-agent/seren-agent.tar.gz"
+      is_host: true
+      nickname: "xavier-1"
+
+runtime:
+  inject_bearer_token: true
+  agent_package_path: ""   # set to /path/to/seren-agent.tar.gz for updates
+
+scheduler:
+  persistence_dir: ""      # defaults to ./scheduler/ next to config file

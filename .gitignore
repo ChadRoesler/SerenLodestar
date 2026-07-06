@@ -427,19 +427,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
-# ===========================================================================
-#  Seren overrides (appended) - keep these AT THE END so they win
-# ===========================================================================
-#
-# The stock VS .gitignore ignores *.pubxml. But our publish profiles ARE the
-# documented build mechanism (see the csproj Description: SelfContained =
-# "ease", FxDependent = "umph"). A stranger cloning this repo needs them. So
-# force-track the real profiles by name. (.user variants stay ignored.)
 
-# Build-artifact relics (SerenRuntimeHost.zip - the old "ship the zip up" file).
-*.zip
-
-# Cross-wired stale entry cleanup note: the stock list below already has
-# /SerenRuntimeHost/seren-runtime.yaml (correct) and /SerenMcpServer/seren-mcp.yaml
-# (belongs to the OTHER repo - harmless here, but it's a copy-paste relic you
-# can delete from this file when convenient).
+# Auto-generated version file (setuptools-scm build artifact)
+serenlodestar/_version.py
