@@ -1,0 +1,114 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>b48bf542-20eb-4a57-86d1-5ebc3d4135be</ProjectGuid>
+    <ProjectHome>
+    </ProjectHome>
+    <StartupFile>
+    </StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>SerenLodestar</Name>
+    <RootNamespace>SerenLoadstar</RootNamespace>
+    <TestFramework>Pytest</TestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="seren_lodestar\" />
+    <Folder Include="seren_lodestar\mcp\" />
+    <Folder Include="seren_lodestar\routes\" />
+    <Folder Include="seren_lodestar\routes\__pycache__\" />
+    <Folder Include="seren_lodestar\scheduling\" />
+    <Folder Include="seren_lodestar\scheduling\__pycache__\" />
+    <Folder Include="seren_lodestar\tooling\" />
+    <Folder Include="seren_lodestar\viewer\" />
+    <Folder Include="seren_lodestar\viewer\ui\" />
+    <Folder Include="seren_lodestar\__pycache__\" />
+    <Folder Include="tests\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="seren_lodestar\agent_client.py" />
+    <Compile Include="seren_lodestar\app.py" />
+    <Compile Include="seren_lodestar\cluster.py" />
+    <Compile Include="seren_lodestar\config.py" />
+    <Compile Include="seren_lodestar\dtos.py" />
+    <Compile Include="seren_lodestar\mcp\server.py" />
+    <Compile Include="seren_lodestar\mcp\__init__.py" />
+    <Compile Include="seren_lodestar\routes\agent_update.py" />
+    <Compile Include="seren_lodestar\routes\chat.py" />
+    <Compile Include="seren_lodestar\routes\cluster_routes.py" />
+    <Compile Include="seren_lodestar\routes\info.py" />
+    <Compile Include="seren_lodestar\routes\scheduler.py" />
+    <Compile Include="seren_lodestar\routes\services.py" />
+    <Compile Include="seren_lodestar\routes\system.py" />
+    <Compile Include="seren_lodestar\routes\__init__.py" />
+    <Compile Include="seren_lodestar\scheduling\scheduled_task.py" />
+    <Compile Include="seren_lodestar\scheduling\scheduler_service.py" />
+    <Compile Include="seren_lodestar\scheduling\__init__.py" />
+    <Compile Include="seren_lodestar\tooling\i_tool_dialect.py" />
+    <Compile Include="seren_lodestar\tooling\mcp_tool_client.py" />
+    <Compile Include="seren_lodestar\tooling\qwen_hermes_dialect.py" />
+    <Compile Include="seren_lodestar\tooling\__init__.py" />
+    <Compile Include="seren_lodestar\_version.py" />
+    <Compile Include="seren_lodestar\__init__.py" />
+    <Compile Include="seren_lodestar\__main__.py" />
+    <Compile Include="tests\conftest.py" />
+    <Compile Include="tests\test_auth.py" />
+    <Compile Include="tests\test_config.py" />
+    <Compile Include="tests\test_smoke.py" />
+    <Compile Include="tests\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="LICENSE" />
+    <Content Include="pyproject.toml" />
+    <Content Include="README.md" />
+    <Content Include="seren-lodestar.yaml.sample" />
+    <Content Include="seren_lodestar\routes\__pycache__\agent_update.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\chat.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\cluster_routes.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\info.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\info.cpython-312.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\scheduler.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\services.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\system.cpython-311.pyc" />
+    <Content Include="seren_lodestar\routes\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="seren_lodestar\scheduling\__pycache__\scheduled_task.cpython-311.pyc" />
+    <Content Include="seren_lodestar\scheduling\__pycache__\scheduler_service.cpython-311.pyc" />
+    <Content Include="seren_lodestar\scheduling\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="seren_lodestar\viewer\ui\body.html" />
+    <Content Include="seren_lodestar\viewer\ui\header_aside.html" />
+    <Content Include="seren_lodestar\viewer\ui\scripts.js" />
+    <Content Include="seren_lodestar\viewer\ui\styles.css" />
+    <Content Include="seren_lodestar\viewer\ui\tabs.html" />
+    <Content Include="seren_lodestar\__pycache__\agent_client.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\app.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\app.cpython-312.pyc" />
+    <Content Include="seren_lodestar\__pycache__\cluster.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\config.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\dtos.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\_version.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\__init__.cpython-312.pyc" />
+    <Content Include="seren_lodestar\__pycache__\__main__.cpython-311.pyc" />
+    <Content Include="seren_lodestar\__pycache__\__main__.cpython-312.pyc" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>

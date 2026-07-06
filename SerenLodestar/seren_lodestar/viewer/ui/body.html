@@ -1,0 +1,60 @@
+<!-- ═══════════════════════════════════════════════════════════════════
+     SerenLodestar cluster dashboard — body fragment on the shell baseplate.
+     The shell owns <html>/<head>/<header>/tabbar and the 🔑 token modal.
+     This is just the single cluster view + the two overlay modals; all
+     logic lives in scripts.js, all styling in styles.css.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Cluster-wide error banner (RuntimeHost unreachable, auth failure). -->
+<div class="banner" id="banner"></div>
+
+<!-- The single dashboard view: node grid + capability-gaps strip. -->
+<div class="view active" id="cluster">
+  <div class="grid" id="grid"><!-- node cards + the actions card render here --></div>
+  <div class="gaps" id="gaps" style="display:none;">
+    <strong>Capability gaps</strong>
+    <div class="gap-list" id="gap-list"></div>
+  </div>
+</div>
+
+<!-- Settings modal — stripped to the broadcast agent-update action. The token
+     now lives in the shell's 🔑 modal, and same-origin serving means there's
+     no RuntimeHost-URL field to configure anymore. -->
+<div class="modal-backdrop" id="settings-backdrop">
+  <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-header">
+      <div class="modal-header-fields">
+        <div class="modal-header-field">
+          <div class="modal-header-label">Settings</div>
+          <div class="modal-header-value" id="settings-title">Cluster actions</div>
+        </div>
+      </div>
+      <button class="modal-close" id="settings-close" aria-label="Close">✕</button>
+    </div>
+    <div class="settings-body">
+      <button class="update-nodes-btn" id="cfg-update-nodes">update all nodes</button>
+      <div class="update-result" id="cfg-update-result" style="display:none;"></div>
+      <div class="hint">
+        Set your bearer token via the <b>🔑</b> button in the header.
+        <b>Update all nodes</b> pushes the agent package to every node and
+        restarts each node agent.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Node drill-down modal. Hidden by default; openNodeModal() toggles .visible. -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <!-- Modal-local flash: per-node action results live here, not the banner. -->
+    <div class="modal-flash" id="modal-flash" role="status" aria-live="polite">
+      <span class="flash-msg" id="modal-flash-msg"></span>
+      <button class="flash-close" id="modal-flash-close" aria-label="Dismiss">✕</button>
+    </div>
+    <div class="modal-header">
+      <div class="modal-header-fields" id="modal-header-fields"></div>
+      <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
