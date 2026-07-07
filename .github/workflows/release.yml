@@ -47,7 +47,7 @@ jobs:
         working-directory: SerenLodestar
 
   build-and-release:
-    needs: [test, test-vscode]
+    needs: [test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
