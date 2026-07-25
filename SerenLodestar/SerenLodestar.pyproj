@@ -59,7 +59,6 @@
     <Compile Include="seren_lodestar\tooling\mcp_tool_client.py" />
     <Compile Include="seren_lodestar\tooling\qwen_hermes_dialect.py" />
     <Compile Include="seren_lodestar\tooling\__init__.py" />
-    <Compile Include="seren_lodestar\_version.py" />
     <Compile Include="seren_lodestar\__init__.py" />
     <Compile Include="seren_lodestar\__main__.py" />
     <Compile Include="tests\conftest.py" />

@@ -61,7 +61,7 @@ from .routes import chat as chat_routes
 from .routes import agent_update as agent_update_routes
 
 from seren_meninges import get_version
-from seren_meninges.auth import bearer_auth_middleware
+from seren_meninges.auth import bearer_auth_middleware, DEFAULT_PUBLIC_PATHS
 from seren_meninges.viewer import render_from_dir
 from seren_sinew.request_log import RequestLoggingMiddleware
 
@@ -182,7 +182,19 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
     )
 
     # ── Auth + logging stack ───────────────────────────────────────────
-    app.add_middleware(bearer_auth_middleware(bearer))
+    # ping + version are token-free liveness/identity probes (see the route table in
+    # this module's docstring). Meninges' DEFAULT_PUBLIC_PATHS only covers /, /health
+    # and /viewer, so extend it with the two public system routes -- derived from
+    # system_routes.API_VERSION so the allowlist can't drift from the route paths if
+    # the API version ever bumps.
+    _sys_v = system_routes.API_VERSION
+    app.add_middleware(bearer_auth_middleware(
+        bearer,
+        public_paths=DEFAULT_PUBLIC_PATHS | {
+            f"/api/{_sys_v}/system/ping",
+            f"/api/{_sys_v}/system/version",
+        },
+    ))
     app.add_middleware(
         RequestLoggingMiddleware,
         service_name="seren-lodestar",
