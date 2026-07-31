@@ -430,3 +430,4 @@ FodyWeavers.xsd
 
 # Auto-generated version file (setuptools-scm build artifact)
 serenlodestar/_version.py
+/SerenLodestar/seren_lodestar.egg-info
