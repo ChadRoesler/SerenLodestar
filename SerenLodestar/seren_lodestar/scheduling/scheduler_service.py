@@ -241,9 +241,17 @@ class SchedulerService:
             [self._task_to_dict(t) for t in self._tasks],
             indent=2,
         )
-        # atomic write via tmpfile + rename
+        # Atomic write via tmpfile + replace.
+        #
+        # MUST be .replace(), NOT .rename(). Path.rename -> os.rename, which on
+        # POSIX silently overwrites an existing target but on Windows raises
+        # FileExistsError (WinError 183) the moment the destination exists. So
+        # the FIRST save works and every save after it throws - including the
+        # _save_state() in stop(), which takes the whole lifespan shutdown down
+        # with it. os.replace is atomic-overwrite on both platforms; that's the
+        # entire reason it exists.
         await asyncio.to_thread(lambda: tmp.write_text(raw, encoding="utf-8"))
-        await asyncio.to_thread(lambda: tmp.rename(path))
+        await asyncio.to_thread(lambda: tmp.replace(path))
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
