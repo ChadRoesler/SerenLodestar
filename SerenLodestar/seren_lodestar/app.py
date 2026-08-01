@@ -150,7 +150,12 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
                 allow_prerelease=cfg.updates.allow_prerelease,
                 fallback_version=APP_VERSION,
             )
-        except ImportError as exc:
+        # Catch EVERYTHING, not just ImportError. This whole feature is cosmetic -
+        # seren_meninges/version.py states the contract: a version read must never
+        # crash startup. A too-narrow catch here already bit us: cfg.updates was
+        # missing, the AttributeError sailed past `except ImportError`, and five
+        # services failed to boot on a feature that only draws a badge.
+        except Exception as exc:
             app.state.updates = None
             log.info("update checking unavailable (%s)", exc)
 

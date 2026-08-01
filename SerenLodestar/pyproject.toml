@@ -56,6 +56,19 @@ dependencies = [
 # status="unavailable" forever and no obvious reason why.
 updates = ["seren-meninges[updates]>=2.0.0,<3"]
 
+# Corporate / intercepting-proxy support. Routes Python TLS through the OS
+# trust store so a corp root CA (Zscaler/Netskope/etc.) is honored without
+# hand-exporting .pem files. Opt-in: `pip install 'seren-lodestar[corp]'` +
+# tls.trust_system_store: true (the installer's --corp flag sets both).
+#
+# THIS EXTRA WAS MISSING while config.py already honored
+# SEREN_LODESTAR_TRUST_SYSTEM_STORE and the installer already offered --corp -
+# so an operator could turn the knob on, watch pip warn "does not provide the
+# extra 'corp'" in passing, and get a TLS failure much later with nothing
+# pointing back here. The knob and the package that implements it must ship
+# together.
+corp = ["truststore>=0.9"]
+
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -63,6 +76,11 @@ dev = [
 
 [project.scripts]
 seren-lodestar = "seren_lodestar.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/ChadRoesler/SerenLodestar"
+Repository = "https://github.com/ChadRoesler/SerenLodestar"
+"Bug Tracker" = "https://github.com/ChadRoesler/SerenLodestar/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -79,6 +97,11 @@ seren_lodestar = [
 root = ".."
 version_scheme = "release-branch-semver"
 version_file = "seren_lodestar/_version.py"
+# Strip the leading 'v' so "v1.2.3" → "1.2.3"
+tag_regex = "^v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+.*)$"
+# Used when no git tags exist (local dev, fresh clone). CI release builds
+# override with SETUPTOOLS_SCM_PRETEND_VERSION.
+fallback_version = "0.0.0.dev0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
