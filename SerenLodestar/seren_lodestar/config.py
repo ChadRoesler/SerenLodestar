@@ -113,6 +113,32 @@ class SchedulerConfig:
 
 
 @dataclass
+class UpdatesConfig:
+    """"Is there a newer seren-lodestar" checking. Cosmetic, opt-outable.
+
+    Needs seren-meninges[updates]. Without it the check reports
+    status="unavailable" rather than silently reading as "you're current" -
+    see seren_meninges/updates.py for why that distinction is load-bearing.
+    """
+    enabled: bool = True
+    check_interval_hours: float = 6.0
+    index_url: str = "https://pypi.org/pypi/{distribution}/json"
+    allow_prerelease: bool = False
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "UpdatesConfig":
+        d = d or {}
+        default = cls()
+        return cls(
+            enabled=bool(d.get("enabled", True)),
+            check_interval_hours=_parse_positive_float(
+                d.get("check_interval_hours"), default.check_interval_hours),
+            index_url=str(d.get("index_url", "") or default.index_url),
+            allow_prerelease=bool(d.get("allow_prerelease", False)),
+        )
+
+
+@dataclass
 class RuntimeConfig:
     """Runtime-specific overrides — agent package path for node updates."""
     inject_bearer_token: bool = True
@@ -149,6 +175,7 @@ class LodestarConfig:
     cluster: ClusterConfig = field(default_factory=ClusterConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    updates: UpdatesConfig = field(default_factory=UpdatesConfig)
 
 
 def _expand_tilde(path: str) -> str:
@@ -161,6 +188,19 @@ def _expand_tilde(path: str) -> str:
     if path.startswith("~/"):
         return str(home / path[2:])
     return path
+
+
+def _parse_positive_float(val: Any, default: float) -> float:
+    """Lenient number read. Garbage or <=0 falls back rather than raising -
+    a bad interval must not stop the service from starting."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        log.warning("unparseable number %r — using default %s", val, default)
+        return default
+    return f if f > 0 else default
 
 
 def _parse_duration(val: str, default_seconds: float) -> float:
@@ -196,6 +236,8 @@ def _apply_env_overrides(cfg: LodestarConfig) -> LodestarConfig:
         cfg.server.bearer_token_keyring = v
     if v := env.get("SEREN_LODESTAR_TRUST_SYSTEM_STORE"):
         cfg.tls.trust_system_store = v.lower() in ("1", "true", "yes", "on")
+    if v := env.get("SEREN_LODESTAR_UPDATES_ENABLED"):
+        cfg.updates.enabled = v.lower() in ("1", "true", "yes", "on")
     return cfg
 
 
@@ -211,9 +253,18 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
 
     if cfg_path.is_file():
         try:
-            with open(cfg_path) as f:
+            # encoding= IS NOT OPTIONAL. Without it Python uses the LOCALE
+            # codec - cp1252 on Windows - and seren-lodestar.yaml.sample opens
+            # with a `# ═══` banner (U+2550 -> E2 95 90), so byte 0x90 raises
+            # UnicodeDecodeError at position 4. The bare except below would
+            # then swallow it and hand back {}, meaning a Windows operator's
+            # ENTIRE config is silently ignored while they stare at the values
+            # they just set. Leniency is the right call for a malformed file;
+            # it must not be what hides a file we simply failed to read.
+            with open(cfg_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-        except Exception:  # noqa: BLE001
+        except Exception as ex:  # noqa: BLE001
+            log.warning("could not read %s: %s — using defaults + env", cfg_path, ex)
             data = {}
 
     server = ServerConfig.from_dict(data.get("server"), default_port=DEFAULT_PORT)
@@ -221,6 +272,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     cluster = ClusterConfig.from_dict(data.get("cluster"))
     scheduler = SchedulerConfig.from_dict(data.get("scheduler"))
     runtime = RuntimeConfig.from_dict(data.get("runtime"))
+    updates = UpdatesConfig.from_dict(data.get("updates"))
 
     cfg = LodestarConfig(
         server=server,
@@ -228,6 +280,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         cluster=cluster,
         scheduler=scheduler,
         runtime=runtime,
+        updates=updates,
     )
 
     # Validate cluster config.

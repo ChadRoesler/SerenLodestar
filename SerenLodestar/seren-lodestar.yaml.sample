@@ -74,3 +74,18 @@ runtime:
 
 scheduler:
   persistence_dir: ""      # defaults to ./scheduler/ next to config file
+
+# ── Update checking ───────────────────────────────────────────────────
+#
+# Asks the package index whether a newer seren-lodestar exists and reports it
+# on GET /. Purely informational - Lodestar never upgrades itself. Applying an
+# update is `pip install -U seren-lodestar` plus a service restart, which is
+# your supervisor's job (NSSM, systemd), not this process's.
+#
+# Needs the extra:  pip install 'seren-lodestar[updates]'
+# Without it, GET / reports status="unavailable" and says why.
+updates:
+  enabled: true
+  check_interval_hours: 6      # cached; never checked per-request
+  allow_prerelease: false      # true would offer you 2.0.0rc1
+  # index_url: "https://pypi.org/pypi/{distribution}/json"   # private index?

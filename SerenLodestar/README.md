@@ -150,7 +150,7 @@ network stops being trusted.
 
 | | |
 |---|---|
-| `GET /` | service info |
+| `GET /` | service info + update status |
 | `GET /health` | liveness |
 | `GET /viewer` | the operator dashboard |
 | `GET /api/v1/system/ping` | public — no token |
@@ -199,9 +199,59 @@ fine on a bench and wrong on anything routable.
 
 ---
 
+## Update checking
+
+`GET /` reports whether a newer `seren-lodestar` has been published:
+
+```jsonc
+{
+  "service": "SerenLodestar",
+  "version": "1.4.2",
+  "status": "ok",
+  "updates": {
+    "status": "ok",
+    "installed": "1.4.2",
+    "latest": "1.5.0",
+    "update_available": true
+  }
+}
+```
+
+Opt-in, because a box that never leaves the LAN has no business calling PyPI:
+
+```bash
+pip install 'seren-lodestar[updates]'
+```
+
+```yaml
+updates:
+  enabled: true
+  check_interval_hours: 6      # cached; never checked per-request
+  allow_prerelease: false
+  # index_url: "https://pypi.org/pypi/{distribution}/json"
+```
+
+The result is cached and the check never happens in the request path, so `/`
+stays fast. `updates.status` is always one of `ok`, `disabled`, `unavailable`
+(the extra isn't installed) or `error` — **never absent, and never a silent
+"you're fine" when it couldn't actually check.** `SEREN_LODESTAR_UPDATES_ENABLED=false`
+turns it off without editing config.
+
+Note `/` is public, so this publishes "running 1.4.2, which is behind" to anyone
+who asks. It already published the version; this adds the comparison. Set
+`enabled: false` if that bothers you and read it off the dashboard instead.
+
+**Lodestar never upgrades itself.** Applying an update is `pip install -U
+seren-lodestar` and a restart — your service supervisor's job, not this
+process's. A running process can't reliably swap its own code out from under
+itself, so it doesn't pretend to.
+
+---
+
 ## What it won't do
 
-It won't install services — that's the Observatory's job on each node. It won't
+It won't upgrade itself (see above). It won't install services — that's the
+Observatory's job on each node. It won't
 invent a node that isn't in the config; discovery probes what you listed, it
 doesn't scan your subnet. A `preferred_for` entry can't force work onto a box
 that isn't answering. And with zero nodes configured it comes up healthy and

@@ -7,7 +7,7 @@ cluster topology manager, discovery service, scheduler, tooling, the
 operator dashboard, and the MCP transport.
 
 Serves:
-    GET  /                                      — service info
+    GET  /                                      — service info + update status
     GET  /health                                — liveness
     GET  /viewer                                — operator dashboard
     GET  /api/v1/system/ping                    — public ping
@@ -128,6 +128,31 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
             state_file_path=scheduler_state_path,
         )
         app.state.scheduler = scheduler
+
+        # ── Update checker ─────────────────────────────────────────────
+        # "is there a newer seren-lodestar". Cosmetic: it polls on a TTL, never
+        # in the request path, and every failure mode is a status string rather
+        # than an exception.
+        #
+        # The try/except guards the IMPORT, because a Meninges older than the
+        # one that introduced updates.py has no such module. Note this gate is
+        # DELIBERATELY VISIBLE - app.state.updates stays None and the info route
+        # reports status="unavailable" with a reason. A silent fallback here
+        # would render as "you're up to date", which is the exact failure shape
+        # that let mcp 2.0.0 quietly delete every /mcp endpoint in the family.
+        try:
+            from seren_meninges.updates import UpdateChecker
+            app.state.updates = UpdateChecker(
+                "seren-lodestar",
+                enabled=cfg.updates.enabled,
+                index_url=cfg.updates.index_url,
+                ttl_seconds=cfg.updates.check_interval_hours * 3600.0,
+                allow_prerelease=cfg.updates.allow_prerelease,
+                fallback_version=APP_VERSION,
+            )
+        except ImportError as exc:
+            app.state.updates = None
+            log.info("update checking unavailable (%s)", exc)
 
         # ── Discovery service ──────────────────────────────────────────────
         discovery = JetsonDiscoveryService(
