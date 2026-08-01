@@ -13,7 +13,23 @@ authors = [{ name = "Chad Roesler" }]
 keywords = ["llm", "cluster", "jetson", "seren"]
 
 dependencies = [
-    "mcp>=1.3.0",
+    # ── WHY THE <2 CAP IS NOT OPTIONAL ────────────────────────────────────
+    # mcp 2.0.0 REMOVED FastMCP. `mcp.server.fastmcp` does not exist in 2.x at
+    # all; the server class is now mcp.server.mcpserver.MCPServer with a
+    # different API. Our MCP surface is written against FastMCP. The last 1.x
+    # that still carries it is 1.29.0.
+    #
+    # Uncapped, a fresh install resolves 2.0.0, the import fails, the
+    # ImportError gate catches it exactly as designed, and the service comes
+    # up in HTTP-only mode with one log line — i.e. /mcp silently ceases to
+    # exist. A graceful fallback around a DEPENDENCY BREAK is indistinguishable
+    # from the SDK not being installed, which is the worst possible failure
+    # mode: it looks like it's working.
+    #
+    # So: cap it, don't hope. Lift the cap in the same commit that ports the
+    # server to the MCPServer API — across the whole family at once, since
+    # they're deliberate copies of each other.
+    "mcp>=1.3.0,<2",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "pyyaml>=6.0",
