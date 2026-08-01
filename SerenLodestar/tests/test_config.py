@@ -66,3 +66,49 @@ def test_node_config():
     )
     assert node.name == "orin-nano"
     assert "whisper" in node.preferred_for
+
+
+# ── the "Lodestar can't see my node" evening ───────────────────────────
+
+def test_top_level_nodes_is_ignored_and_says_so(tmp_path, caplog):
+    """YAML accepts a top-level `nodes:` happily; the loader reads
+    cluster.nodes and ignores it. Result: an orchestrator with nothing to
+    orchestrate, and no error anywhere obvious. The diagnostic has to name
+    THIS mistake, not just report 'empty'."""
+    import logging
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        'server:\n  port: 6361\n'
+        'nodes:\n'
+        '  - name: "nuc"\n'
+        '    agent_url: "http://127.0.0.1:7777"\n'
+    )
+    with caplog.at_level(logging.WARNING):
+        cfg = load_config(str(p))
+    assert len(cfg.cluster.nodes) == 0
+    blob = caplog.text
+    assert "TOP-LEVEL" in blob, "must name the actual mistake"
+    assert "cluster:" in blob, "must show the correct shape"
+
+
+def test_correctly_nested_nodes_load(tmp_path):
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        'cluster:\n  nodes:\n'
+        '    - name: "nuc"\n'
+        '      agent_url: "http://127.0.0.1:7777"\n'
+        '      is_host: true\n'
+    )
+    cfg = load_config(str(p))
+    assert [n.name for n in cfg.cluster.nodes] == ["nuc"]
+    assert cfg.cluster.nodes[0].is_host is True
+
+
+def test_bind_address_as_a_destination_is_flagged():
+    """0.0.0.0 as a target WORKS on Linux, which is exactly why it survives
+    into configs that then fail somewhere less forgiving."""
+    from seren_lodestar.config import ClusterConfig
+    c = ClusterConfig.from_dict(
+        {"nodes": [{"name": "nuc", "agent_url": "http://0.0.0.0:7777"}]})
+    err = c.validate()
+    assert err and "0.0.0.0" in err and "127.0.0.1" in err

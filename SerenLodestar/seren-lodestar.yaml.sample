@@ -1,5 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════
 #  seren-lodestar.yaml - SerenLodestar cluster configuration.
+#
+#  This file is also the documentation for wiring Observatories to the
+#  cluster head, so the values in it have to be RIGHT rather than merely
+#  illustrative. It once shipped pointing at port 7374, which nothing has
+#  ever served - every node copied from it failed discovery silently.
 # ═══════════════════════════════════════════════════════════════════════
 
 server:
@@ -17,26 +22,55 @@ cluster:
   health_strict_mode: false
 
   # ── Node definitions ─────────────────────────────────────────────────
+  #
+  # One entry per node running a SerenObservatory. Addresses below are
+  # placeholders - substitute your own.
+  #
+  #   agent_url   the Observatory on that node. PORT 7777 (the family
+  #               convention for Observatory); Lodestar talks to it at
+  #               /api/v1/system/* and /api/v1/service/<name>/*.
+  #               Confirm with:  curl http://<node>:7777/api/v1/system/ping
+  #   agent_token bearer token, if that Observatory sets one. Blank = none.
+  #   preferred_for  capabilities to route to this node first. Advisory:
+  #               the cluster falls back to whoever actually answers.
+  #   agent_update_path  where a pushed Observatory package lands ON THAT
+  #               NODE. The user differs per platform - a Jetson image is
+  #               usually /home/jetson, a Spark or NUC is whatever account
+  #               runs the service - so set it per node rather than
+  #               assuming.
+  #   is_host     exactly one node should be true: the one hosting the
+  #               primary inference service.
+  #   nickname    free-text label for the dashboard.
   nodes:
     - name: "orin-nano"
-      agent_url: "http://192.168.1.100:7374"
+      agent_url: "http://192.168.1.100:7777"
       agent_token: ""
       preferred_for: ["whisper", "kokoro"]
-      agent_update_path: "/home/jetson/seren-agent/seren-agent.tar.gz"
+      agent_update_path: "/home/jetson/seren-observatory/seren-observatory.tar.gz"
       is_host: false
       nickname: "nano-1"
 
     - name: "xavier"
-      agent_url: "http://192.168.1.101:7374"
+      agent_url: "http://192.168.1.101:7777"
       agent_token: ""
       preferred_for: ["llama", "comfy"]
-      agent_update_path: "/home/jetson/seren-agent/seren-agent.tar.gz"
+      agent_update_path: "/home/jetson/seren-observatory/seren-observatory.tar.gz"
       is_host: true
       nickname: "xavier-1"
 
+    # A Spark or a NUC goes in exactly the same way - the node type isn't
+    # special to Lodestar, only the Observatory it talks to is.
+    # - name: "spark"
+    #   agent_url: "http://192.168.1.102:7777"
+    #   agent_token: ""
+    #   preferred_for: ["llama"]
+    #   agent_update_path: "/home/seren/seren-observatory/seren-observatory.tar.gz"
+    #   is_host: false
+    #   nickname: "spark-1"
+
 runtime:
   inject_bearer_token: true
-  agent_package_path: ""   # set to /path/to/seren-agent.tar.gz for updates
+  agent_package_path: ""   # set to /path/to/seren-observatory.tar.gz for updates
 
 scheduler:
   persistence_dir: ""      # defaults to ./scheduler/ next to config file

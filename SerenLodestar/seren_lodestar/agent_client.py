@@ -2,10 +2,18 @@
 seren_lodestar.agent_client
 =======================================================================
 
-Typed HTTP client for the per-Jetson seren-agent API at /api/v1/...
+Typed HTTP client for one node's SerenObservatory API at /api/v1/...
 Ported from SerenCluster/JetsonAgentClient.cs.
 
-One instance per agent — see cluster.py for routing across many.
+The node can be a Jetson, a Spark, a NUC or anything else running an
+Observatory — Lodestar doesn't care what the hardware is, only that
+something answers at /api/v1/system/ping. The Jetson-flavoured names in
+here (JetsonAgentClient, JetsonNodeOptions, agent_url) predate the Spark
+and are kept for now because agent_url and friends are PUBLIC CONFIG KEYS;
+renaming them breaks every deployed seren-lodestar.yaml. Do it as one
+deliberate migration, not opportunistically.
+
+One instance per node — see cluster.py for routing across many.
 """
 from __future__ import annotations
 
@@ -39,7 +47,7 @@ log = logging.getLogger("seren_lodestar.agent_client")
 
 
 class JetsonAgentClient:
-    """Typed HTTP client for one Jetson's seren-agent API."""
+    """Typed HTTP client for one node's Observatory API."""
 
     def __init__(self, options: JetsonNodeOptions, log_fn=None):
         if not options.name:
@@ -130,25 +138,28 @@ class JetsonAgentClient:
                 "package": (filename, package_bytes, "application/octet-stream"),
                 "dest_path": (None, dest_path),
             }
+            # NOT "agent-update". Observatory serves this as
+            # /api/v1/system/observatory-update - the endpoint was renamed
+            # with the service and this caller wasn't, so every push 404'd.
             resp = await self._client.post(
-                "api/v1/system/agent-update",
+                "api/v1/system/observatory-update",
                 files=files,
                 timeout=120.0,
             )
             if not resp.is_success:
                 self._log(
-                    f"POST agent-update -> HTTP {resp.status_code}"
+                    f"POST observatory-update -> HTTP {resp.status_code}"
                 )
                 return AgentUpdateResponse(
                     ok=False, error=f"HTTP {resp.status_code}"
                 )
             return _from_dict(resp.json(), AgentUpdateResponse)
         except httpx.TimeoutException:
-            self._log("POST agent-update -> timeout")
+            self._log("POST observatory-update -> timeout")
             return AgentUpdateResponse(ok=False, error="timeout")
         except Exception as ex:
             self._log(
-                f"POST agent-update -> {type(ex).__name__}: {ex}"
+                f"POST observatory-update -> {type(ex).__name__}: {ex}"
             )
             return AgentUpdateResponse(ok=False, error=str(ex))
 
@@ -204,6 +215,20 @@ class JetsonAgentClient:
         """Returns raw JSON element since per-service shapes differ."""
         path = f"api/v1/service/{quote(service, safe='')}/models"
         return await self._get_json_raw(path)
+
+    # ── lifecycle ───────────────────────────────────────────────────────────
+
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client and its connection pool.
+
+        THIS MUST STAY INDENTED INTO THE CLASS. It previously sat at column
+        zero, below the module-level helpers, so it was a free function that
+        merely happened to take a parameter named `self` - and
+        JetsonAgentClient had no aclose at all. cluster.py calls
+        `await agent.aclose()` on shutdown, so every clean stop raised
+        AttributeError and no connection pool was ever closed.
+        """
+        await self._client.aclose()
 
     # ── internal HTTP helpers ───────────────────────────────────────────────
 
@@ -292,6 +317,3 @@ def _coerce(value, hint):
         return _from_dict(value, hint)
     return value
 
-async def aclose(self) -> None:
-    """Close the underlying HTTP client and its connection pool."""
-    await self._client.aclose()
