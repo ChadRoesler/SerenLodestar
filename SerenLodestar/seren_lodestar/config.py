@@ -54,7 +54,11 @@ class JetsonNodeConfig:
 
 @dataclass
 class ClusterConfig:
-    """Cluster topology — the list of Jetson nodes."""
+    """Cluster topology — the nodes this head orchestrates.
+
+    Node type is irrelevant here: anything running a SerenObservatory
+    qualifies, Jetson or otherwise.
+    """
     nodes: list[JetsonNodeConfig] = field(default_factory=list)
     refresh_interval_seconds: int = 1800  # 30 minutes
     discovery_timeout_seconds: float = 2.0
@@ -85,6 +89,13 @@ class ClusterConfig:
                 return f"cluster.nodes[{i}].name is empty"
             if not n.agent_url:
                 return f"cluster.nodes[{i}].agent_url is empty (node='{n.name}')"
+            # 0.0.0.0 is a BIND address. As a destination Linux quietly routes
+            # it to localhost, so this works right up until it's read by
+            # something that doesn't - and it reads like a typo besides.
+            if "//0.0.0.0" in n.agent_url:
+                return (f"cluster.nodes[{i}].agent_url uses 0.0.0.0 "
+                        f"(node='{n.name}') - use 127.0.0.1 for a local "
+                        "Observatory, or the node's real address")
         return None
 
 
@@ -116,43 +127,18 @@ class RuntimeConfig:
         )
 
 
-# ── Cluster options (from YAML) ────────────────────────────────────────────
-
-@dataclass
-class JetsonNodeOptions:
-    name: str
-    agent_url: str
-    agent_token: str = ""
-    preferred_for: list[str] = field(default_factory=list)
-    agent_update_path: str = ""
-    is_host: bool = False
-    nickname: str = ""
-
-
-@dataclass
-class ClusterOptions:
-    nodes: list[JetsonNodeOptions] = field(default_factory=list)
-    refresh_interval_seconds: int = 1800  # 30 minutes
-    discovery_timeout_seconds: float = 2.0
-    health_strict_mode: bool = False
-
-
-# ── Runtime options (from YAML) ────────────────────────────────────────────
-
-@dataclass
-class RuntimeOptions:
-    host: str = "0.0.0.0"
-    port: int = 6361
-    bearer_token: str = ""
-    inject_bearer_token: bool = True
-    agent_package_path: str = ""
-    scheduler_persistence_dir: str = ""
-
-
-@dataclass
-class RuntimeHostOptions:
-    runtime: RuntimeOptions = field(default_factory=RuntimeOptions)
-    cluster: ClusterOptions = field(default_factory=ClusterOptions)
+# NOTE: this module used to also define JetsonNodeOptions, ClusterOptions,
+# RuntimeOptions and RuntimeHostOptions — a second, parallel config family
+# left over from the C# port. Nothing imported them (the only imports from
+# here are LodestarConfig and load_config), and JetsonNodeOptions was
+# defined a SECOND time in dtos.py, which is the live one that cluster.py
+# and agent_client.py actually use. Two classes with one name in one package
+# is an import-the-wrong-type trap waiting on someone in a hurry.
+#
+# RuntimeHostOptions was the loudest tell: RuntimeHost is what this service
+# was called before it was Lodestar. A fossil wearing a fossil's name.
+#
+# The live option types live in dtos.py. Add fields there.
 
 
 @dataclass
@@ -244,9 +230,36 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         runtime=runtime,
     )
 
-    # Validate cluster config
+    # Validate cluster config.
+    #
+    # LOUD, because the failure is otherwise invisible. A cluster head with
+    # no cluster starts perfectly, serves every route, and simply reports
+    # nothing — so "Lodestar can't see my node" looks like a network problem
+    # for as long as you're willing to believe it is. The single most common
+    # cause is `nodes:` written at the top level instead of under `cluster:`,
+    # which YAML is happy to accept and this loader silently ignores, so the
+    # message names that specifically rather than saying "empty".
     err = cluster.validate()
     if err:
-        log.warning("cluster validation: %s", err)
+        log.warning("cluster config problem: %s", err)
+        if not cluster.nodes:
+            top_level_nodes = isinstance(data.get("nodes"), list) and data["nodes"]
+            log.warning(
+                "Lodestar has NO NODES and will orchestrate nothing.%s",
+                (
+                    "\n  Found a TOP-LEVEL `nodes:` block with "
+                    f"{len(data['nodes'])} entr"
+                    f"{'y' if len(data['nodes']) == 1 else 'ies'} — it must be "
+                    "nested under `cluster:`:\n"
+                    "      cluster:\n"
+                    "        nodes:\n"
+                    "          - name: \"nuc\"\n"
+                    "            agent_url: \"http://127.0.0.1:7777\"\n"
+                    "            is_host: true"
+                    if top_level_nodes else
+                    "\n  Add a `cluster.nodes` list — see "
+                    "seren-lodestar.yaml.sample."
+                ),
+            )
 
     return _apply_env_overrides(cfg)
