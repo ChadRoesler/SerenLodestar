@@ -36,11 +36,26 @@ dependencies = [
     "httpx>=0.28.0",
     "starlette>=0.37",
     "croniter>=2.0",
-    "seren-meninges>=1.0.0,<2",
+    # Meninges 2.0.0 is the floor: it carries the bearer-auth byte-compare fix
+    # (a non-ASCII Authorization header used to 500 instead of 401) and
+    # seren_meninges.updates, which the [updates] extra below imports. <3
+    # because a MAJOR here is an un-defaultable security change, and that is
+    # the only thing that should ever force a bump.
+    "seren-meninges>=2.0.0,<3",
     "seren-sinew>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]
+# "is there a newer seren-lodestar" reporting on GET /. Opt-in, because a
+# service that never leaves a LAN has no reason to talk to PyPI. Pulls the
+# Meninges extra rather than httpx/packaging directly - the check lives in
+# seren_meninges.updates and only one repo should own that dep set.
+#
+# The floor matches the core dep above: updates.py landed in Meninges 2.0.0.
+# Resolve anything older and the lifespan import fails, leaving you with
+# status="unavailable" forever and no obvious reason why.
+updates = ["seren-meninges[updates]>=2.0.0,<3"]
+
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
