@@ -237,12 +237,9 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
 
     @app.get("/")
     async def root(request: Request):
-        store = request.app.state.store
         return {
             "service": "SerenLodestar",
             "version": APP_VERSION,
-            "counts": store.counts(),
-            "finder": store.finder_kind,
             "updates": await updates_payload(
                 getattr(request.app.state, "updates", None),
                 distribution="seren-lodestar", installed=APP_VERSION),
