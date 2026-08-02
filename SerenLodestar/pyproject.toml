@@ -36,12 +36,12 @@ dependencies = [
     "httpx>=0.28.0",
     "starlette>=0.37",
     "croniter>=2.0",
-    # Meninges 2.0.0 is the floor: it carries the bearer-auth byte-compare fix
+    # Meninges 2.1.0 is the floor: it carries the bearer-auth byte-compare fix
     # (a non-ASCII Authorization header used to 500 instead of 401) and
     # seren_meninges.updates, which the [updates] extra below imports. <3
     # because a MAJOR here is an un-defaultable security change, and that is
     # the only thing that should ever force a bump.
-    "seren-meninges>=2.0.0,<3",
+    "seren-meninges>=2.1.0,<3",
     "seren-sinew>=1.0.0,<2",
 ]
 
@@ -51,10 +51,10 @@ dependencies = [
 # Meninges extra rather than httpx/packaging directly - the check lives in
 # seren_meninges.updates and only one repo should own that dep set.
 #
-# The floor matches the core dep above: updates.py landed in Meninges 2.0.0.
+# The floor matches the core dep above: updates.py landed in 2.0.0 and updates_payload in 2.1.0.
 # Resolve anything older and the lifespan import fails, leaving you with
 # status="unavailable" forever and no obvious reason why.
-updates = ["seren-meninges[updates]>=2.0.0,<3"]
+updates = ["seren-meninges[updates]>=2.1.0,<3"]
 
 # Corporate / intercepting-proxy support. Routes Python TLS through the OS
 # trust store so a corp root CA (Zscaler/Netskope/etc.) is honored without
