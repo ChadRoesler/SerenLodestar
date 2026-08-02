@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from .cluster import JetsonClusterClient, JetsonDiscoveryService
@@ -61,6 +61,7 @@ from .routes import chat as chat_routes
 from .routes import agent_update as agent_update_routes
 
 from seren_meninges import get_version
+from seren_meninges.updates import updates_payload
 from seren_meninges.auth import bearer_auth_middleware, DEFAULT_PUBLIC_PATHS
 from seren_meninges.viewer import render_from_dir
 from seren_sinew.request_log import RequestLoggingMiddleware
@@ -233,6 +234,19 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
 
     # ── The operator dashboard viewer ──────────────────────────────────
     viewer_dir = Path(__file__).resolve().parent / "viewer" / "ui"
+
+    @app.get("/")
+    async def root(request: Request):
+        store = request.app.state.store
+        return {
+            "service": "SerenLodestar",
+            "version": APP_VERSION,
+            "counts": store.counts(),
+            "finder": store.finder_kind,
+            "updates": await updates_payload(
+                getattr(request.app.state, "updates", None),
+                distribution="seren-lodestar", installed=APP_VERSION),
+        }
 
     @app.get("/viewer")
     async def viewer():
