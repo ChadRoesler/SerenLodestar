@@ -56,12 +56,13 @@ async def system_status(request: Request):
         snap_online = snap.online if snap else False
         online = snap_online and not all_failed
         if all_failed and snap_online:
-            cluster.mark_node_offline(name, "all status fetches failed during aggregate query")
+            cluster.mark_node_suspect(name, "all status fetches failed during aggregate query")
         return {
             "name": name,
             "nickname": agent.nickname,
             "is_host": agent.is_host,
             "online": online,
+            "suspect": cluster.suspect_reason(name),
             "last_probed": snap.last_probed if snap else None,
             "last_error": snap.last_error if snap else None,
             "installed_services": snap.installed_services if snap else [],
@@ -104,24 +105,47 @@ async def system_health(request: Request):
     return JSONResponse(payload)
 
 
+async def _optional_json(request: Request) -> dict:
+    """The body, if one was sent and it parses; {} otherwise. Never raises."""
+    try:
+        length = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        length = 0
+    if length <= 0:
+        return {}
+    try:
+        body = await request.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
 @router.post(f"/api/{API_VERSION}/system/reclaim")
 async def system_reclaim(request: Request):
+    """Ask every node (or `nodes`) to give the GPU back.
+
+    Body (optional), forwarded to each Observatory:
+        exclude: [str]   never stop these
+        include: [str]   also stop these non-GPU (systemd / docker) services
+        all:     bool    stop everything stoppable except `exclude` and the
+                         Observatory itself - what this used to do silently
+        nodes:   [str]   only these nodes
+
+    The default stops only the GPU daemons on each node. It used to stop the
+    entire constellation - Lodestar included, from Lodestar's own button.
+    """
     cluster: JetsonClusterClient = request.app.state.cluster
-    body: dict | None = None
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > 0:
-        try:
-            body = await request.json()
-        except Exception:
-            pass
-    body = body or {}
+    body = await _optional_json(request)
     exclude = body.get("exclude")
+    include = body.get("include")
+    everything = bool(body.get("all", False))
     nodes_filter = body.get("nodes")
     targets = list(cluster.agents.items())
     if nodes_filter:
         targets = [(n, a) for n, a in targets if n in nodes_filter]
     per_node = await asyncio.gather(
-        *[_safe_get(agent.reclaim_async(exclude)) for _, agent in targets]
+        *[_safe_get(agent.reclaim_async(exclude, include=include, everything=everything))
+          for _, agent in targets]
     )
     results = []
     all_ok = True
@@ -145,14 +169,13 @@ async def reboot_node(request: Request, node: str):
     if agent is None:
         return JSONResponse({"error": f"unknown node '{node}'"}, status_code=404)
     delay = 1
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > 0:
+    body = await _optional_json(request)
+    if "delay_minutes" in body:
         try:
-            body = await request.json()
-            if "delay_minutes" in body:
-                delay = int(body["delay_minutes"])
-        except Exception:
-            pass
+            delay = int(body["delay_minutes"])
+        except (TypeError, ValueError):
+            return JSONResponse({"error": f"delay_minutes must be a whole number, got {body['delay_minutes']!r}"},
+                                status_code=400)
     resp = await agent.reboot_async(delay)
     if resp is None:
         return JSONResponse({

@@ -17,7 +17,8 @@ Serves:
     POST /api/v1/system/reclaim                 — stop services on nodes
     POST /api/v1/system/reboot/{node}           — reboot a node
     POST /api/v1/system/reboot/{node}/cancel    — cancel reboot
-    POST /api/v1/system/agent-update            — push agent to all nodes
+    POST /api/v1/system/agent-update            — push Observatory to all nodes
+    POST /api/v1/node/{node}/agent-update       — push Observatory to one node
     POST /api/v1/cluster/refresh                — refresh all nodes
     POST /api/v1/cluster/refresh/{node}         — refresh one node
     GET  /api/v1/cluster/capabilities           — capability map
@@ -85,47 +86,72 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
         app.state.accent = ACCENT
 
         # ── Cluster client ────────────────────────────────────────────────
+        # `default_token`: with runtime.inject_bearer_token, a node that has
+        # no agent_token of its own is spoken to with Lodestar's own bearer.
         cluster = JetsonClusterClient(
             cfg.cluster,
             log_fn=lambda m: log.info(f"[cluster] {m}"),
+            default_token=bearer if cfg.runtime.inject_bearer_token else "",
         )
         app.state.cluster = cluster
 
         # ── HTTP client pool ───────────────────────────────────────────────
+        # llama gets its own timeout shape: connect fast, read slow. A Nano
+        # producing 1024 tokens is minutes, not the 120s everything else gets.
         _http_clients: dict[str, httpx.AsyncClient] = {}
+        _llama_timeout = httpx.Timeout(
+            connect=cfg.chat.connect_timeout_seconds,
+            read=cfg.chat.generation_timeout_seconds,
+            write=60.0, pool=cfg.chat.connect_timeout_seconds,
+        )
 
         def _http_client_factory(name: str) -> httpx.AsyncClient:
             if name not in _http_clients:
-                _http_clients[name] = httpx.AsyncClient(timeout=120)
+                timeout = _llama_timeout if name == "llama-upstream" else httpx.Timeout(120)
+                _http_clients[name] = httpx.AsyncClient(timeout=timeout)
             return _http_clients[name]
 
         app.state.http_client_factory = _http_client_factory
 
-        # ── Tooling / chat ─────────────────────────────────────────────────
-        from .tooling import QwenHermesDialect, McpToolClient
-        dialect = QwenHermesDialect()
-        app.state.dialect = dialect
+        # ── Dialect ───────────────────────────────────────────────────────
+        from .tooling import QwenHermesDialect, build_tool_client
+        app.state.dialect = QwenHermesDialect()
+
+        # ── Mount the MCP surface FIRST: the tool client is built on it ────
+        try:
+            from .mcp.server import mount_mcp_routes
+            mcp_server = mount_mcp_routes(app)
+        except ImportError as exc:
+            mcp_server = None
+            log.info("MCP surface not available; HTTP-only mode (%s)", exc)
+        except Exception as exc:
+            mcp_server = None
+            log.warning("MCP mount failed: %r — continuing without MCP", exc)
+        app.state.mcp_server = mcp_server
+
+        # ── The tool client: in-process for our own tools, remote for the rest
+        tool_client = build_tool_client(mcp_server, cfg.tooling.remote_mcp)
+        app.state.tool_client = tool_client
+        if mcp_server is None and not cfg.tooling.remote_mcp:
+            log.warning("no tools: MCP is not mounted and tooling.remote_mcp is empty - "
+                        "chat runs without a tool loop")
 
         # ── Scheduler ──────────────────────────────────────────────────────
         from .scheduling import SchedulerService
 
         scheduler_dir = cfg.scheduler.persistence_dir
         if not scheduler_dir:
-            config_path = os.environ.get("SEREN_LODESTAR_CONFIG", "")
-            if config_path:
-                cfg_dir = os.path.dirname(os.path.abspath(config_path))
-                scheduler_dir = os.path.join(cfg_dir, "scheduler")
+            if cfg.config_path:
+                scheduler_dir = os.path.join(os.path.dirname(cfg.config_path), "scheduler")
             else:
-                scheduler_dir = "/tmp/seren-scheduler"
-
+                scheduler_dir = os.path.join(os.path.expanduser("~"), "seren-lodestar", "scheduler")
+        scheduler_dir = os.path.expanduser(scheduler_dir)
         os.makedirs(scheduler_dir, exist_ok=True)
-        scheduler_state_path = (scheduler_dir.rstrip("/") + "/scheduled_tasks.json")
-
-        def _scheduler_http_client(name: str):
-            return httpx.AsyncClient(timeout=120)
+        scheduler_state_path = os.path.join(scheduler_dir, "scheduled_tasks.json")
+        log.info("scheduler state: %s", scheduler_state_path)
 
         scheduler = SchedulerService(
-            http_client_factory=_scheduler_http_client,
+            tool_client=tool_client,
             state_file_path=scheduler_state_path,
         )
         app.state.scheduler = scheduler
@@ -175,17 +201,6 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
         if scheduler:
             asyncio.ensure_future(scheduler.start())
             log.info("scheduler service started")
-
-        # ── Mount the MCP surface ──────────────────────────────────────────
-        try:
-            from .mcp.server import mount_mcp_routes
-            mcp_server = mount_mcp_routes(app)
-        except ImportError as exc:
-            mcp_server = None
-            log.info("MCP surface not available; HTTP-only mode (%s)", exc)
-        except Exception as exc:
-            mcp_server = None
-            log.warning("MCP mount failed: %r — continuing without MCP", exc)
 
         async with AsyncExitStack() as _mcp_stack:
             session_manager = getattr(mcp_server, "session_manager", None)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -36,9 +37,17 @@ class JetsonClusterClient:
     directly to the resolved URL.
     """
 
-    def __init__(self, options: ClusterOptions, log_fn=None):
+    #: How long a node stays out of routing after a connection failure before
+    #: it is re-probed on demand. Short on purpose: a refused connection is
+    #: usually a service mid-restart, and the fix for a wrong guess is one
+    #: cheap probe, not thirty minutes of 503s.
+    SUSPECT_BACKOFF_S = 30.0
+
+    def __init__(self, options: ClusterOptions, log_fn=None, default_token: str = ""):
         self._options = options
         self._log = log_fn or (lambda msg: log.info(f"[cluster] {msg}"))
+        # node -> (monotonic deadline, reason). See mark_node_suspect.
+        self._suspect: dict[str, tuple[float, str]] = {}
 
         if not options.nodes:
             self._log("no nodes configured — cluster starts empty (zero-config mode)")
@@ -52,7 +61,7 @@ class JetsonClusterClient:
             )
 
         self._agents: dict[str, JetsonAgentClient] = {
-            n.name: JetsonAgentClient(n, log_fn=self._log)
+            n.name: JetsonAgentClient(n, log_fn=self._log, default_token=default_token)
             for n in options.nodes
         }
 
@@ -119,6 +128,8 @@ class JetsonClusterClient:
         try:
             snap = await self._probe_node(agent)
             self._snapshots[node_name] = snap
+            if snap.online:
+                self._suspect.pop(node_name, None)
             self._log(
                 f"refresh-node {node_name}: online={snap.online} "
                 f"services={len(snap.installed_services)}"
@@ -128,18 +139,61 @@ class JetsonClusterClient:
             self._log(f"refresh-node {node_name} threw: {ex}")
             return None
 
-    def mark_node_offline(self, node_name: str, reason: str) -> None:
-        """Mark a node offline without probing."""
+    def mark_node_suspect(self, node_name: str, reason: str,
+                          backoff_s: Optional[float] = None) -> None:
+        """Take a node out of routing for a short backoff, then re-probe it.
+
+        WHAT THIS REPLACED. `mark_node_offline` flipped the snapshot to
+        online=False and nothing re-probed until the discovery loop (thirty
+        minutes by default) or a manual refresh. One refused connection - a
+        llama mid-restart, a reclaim the head itself asked for - cost the
+        whole node for half an hour, and because routing needs an online
+        snapshot, even "start llama" was refused on the node that needed it.
+
+        Now a failure is a SUSPICION with a deadline. While it stands the node
+        is skipped by routing; once it lapses, the next request that needs the
+        node probes it once (see get_service_url_async) and either clears the
+        suspicion or renews it. The snapshot keeps `online=True` and records
+        the reason, so the dashboard shows what happened without the node
+        vanishing from the map.
+        """
+        if node_name not in self._agents:
+            return
+        until = time.monotonic() + (self.SUSPECT_BACKOFF_S if backoff_s is None else backoff_s)
+        self._suspect[node_name] = (until, reason)
         prev = self._snapshots.get(node_name)
         if prev is not None:
             self._snapshots[node_name] = NodeSnapshot(
-                online=False,
+                online=prev.online,
                 installed_services=prev.installed_services,
                 status=prev.status,
                 last_error=reason,
-                last_probed=datetime.now(timezone.utc).isoformat(),
+                last_probed=prev.last_probed,
             )
-            self._log(f"marked offline: {node_name} ({reason})")
+        self._log(f"suspect: {node_name} for {int(until - time.monotonic())}s ({reason})")
+
+    def mark_node_offline(self, node_name: str, reason: str) -> None:
+        """Kept for callers; now means `mark_node_suspect` (see there)."""
+        self.mark_node_suspect(node_name, reason)
+
+    def is_suspect(self, node_name: str) -> bool:
+        entry = self._suspect.get(node_name)
+        return entry is not None and time.monotonic() < entry[0]
+
+    def suspect_reason(self, node_name: str) -> Optional[str]:
+        entry = self._suspect.get(node_name)
+        return entry[1] if entry is not None and time.monotonic() < entry[0] else None
+
+    async def _reprobe_lapsed_suspects(self) -> None:
+        """A node whose suspicion has lapsed gets one probe before routing.
+
+        This is what makes recovery happen on demand instead of on the
+        thirty-minute discovery clock.
+        """
+        lapsed = [n for n, (until, _) in self._suspect.items() if time.monotonic() >= until]
+        for name in lapsed:
+            self._suspect.pop(name, None)
+            await self.refresh_node_async(name)
 
     async def _probe_node(
         self, agent: JetsonAgentClient
@@ -189,6 +243,7 @@ class JetsonClusterClient:
         self, capability: str
     ) -> Optional[RoutedService]:
         """Resolve 'where is service X right now?'."""
+        await self._reprobe_lapsed_suspects()
         node = self._choose_node_for(capability)
         if node is None:
             self._log(
@@ -264,6 +319,8 @@ class JetsonClusterClient:
         return None
 
     def _is_online_with(self, node_name: str, capability: str) -> bool:
+        if self.is_suspect(node_name):
+            return False
         snap = self._snapshots.get(node_name)
         if snap is None:
             return False

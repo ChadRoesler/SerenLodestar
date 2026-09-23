@@ -2,8 +2,15 @@
 seren_lodestar.scheduling.scheduler_service
 =======================================================================
 
-Background scheduler that fires MCP tool calls on a cron or relative
+Background scheduler that fires tool calls on a cron or relative
 schedule. Ported from SerenLodestar/Scheduling/SchedulerService.cs.
+
+It fires through the same tool client the chat loop uses (see
+tooling/tool_clients.py) - in-process for Lodestar's own tools, the official
+MCP client for remote ones. It used to POST raw JSON-RPC to "/" on an httpx
+client with no base URL, which httpx refused before the request left the
+process, so every scheduled task recorded the same `last_error` forever and
+never ran once.
 """
 from __future__ import annotations
 
@@ -12,7 +19,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from .scheduled_task import ScheduledTask
 
@@ -59,11 +66,11 @@ class SchedulerService:
 
     def __init__(
         self,
-        http_client_factory: Callable[[str], object],
+        tool_client: Any,
         state_file_path: str,
         log_fn: Optional[Callable[[str], None]] = None,
     ) -> None:
-        self._http_factory = http_client_factory
+        self._tools = tool_client
         self._state_path = state_file_path
         self._log = log_fn or (lambda m: print(f"[scheduler] {m}"))
         self._tasks: list[ScheduledTask] = []
@@ -161,32 +168,18 @@ class SchedulerService:
         error: Optional[str] = None
 
         try:
-            client = self._http_factory("mcp")
             args = json.loads(task.tool_args_json) if task.tool_args_json else {}
-            rpc = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": task.tool_name,
-                    "arguments": args,
-                },
-            }
-
-            # client is an httpx.AsyncClient or similar
-            resp = await client.post("/", json=rpc)
-            if not resp.is_success:
-                error = f"MCP returned HTTP {resp.status_code}"
-            else:
-                body = resp.json()
-                # Check for JSON-RPC error envelope
-                if isinstance(body, dict) and "error" in body:
-                    err = body["error"]
-                    if isinstance(err, dict):
-                        msg = err.get("message") or str(err)
-                    else:
-                        msg = str(err)
-                    error = f"MCP JSON-RPC error: {msg}"
+            if not isinstance(args, dict):
+                raise ValueError("tool_args_json must be a JSON object")
+            result = await self._tools.call_tool_async(task.tool_name, args)
+            # The tool client reports failure as a JSON object with "error";
+            # anything else is the tool's own answer.
+            try:
+                parsed = json.loads(result)
+            except (TypeError, ValueError):
+                parsed = None
+            if isinstance(parsed, dict) and "error" in parsed and len(parsed) == 1:
+                error = str(parsed["error"])
         except Exception as ex:
             error = f"{type(ex).__name__}: {ex}"
 

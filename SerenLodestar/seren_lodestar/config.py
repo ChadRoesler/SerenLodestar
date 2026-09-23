@@ -139,8 +139,85 @@ class UpdatesConfig:
 
 
 @dataclass
+class RemoteMcpConfig:
+    """One remote MCP server whose tools the chat loop and scheduler may call.
+
+    Workbench is the usual one: memory, search, time and the rest live there.
+    The token pointers are the family's (inline / env / keyring) and resolve
+    through seren_meninges exactly like a server block does.
+    """
+    name: str = ""
+    url: str = ""
+    bearer_token: str = ""
+    bearer_token_env: str = ""
+    bearer_token_keyring: str = ""
+
+    def resolve_bearer(self) -> str:
+        from seren_meninges import resolve_token
+        return resolve_token(
+            inline=self.bearer_token or None,
+            keyring_ref=self.bearer_token_keyring or None,
+            env_var=self.bearer_token_env or None,
+        )
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "RemoteMcpConfig":
+        return cls(
+            name=str(d.get("name", "") or ""),
+            url=str(d.get("url", "") or ""),
+            bearer_token=str(d.get("bearer_token", "") or ""),
+            bearer_token_env=str(d.get("bearer_token_env", "") or ""),
+            bearer_token_keyring=str(d.get("bearer_token_keyring", "") or ""),
+        )
+
+
+@dataclass
+class ToolingConfig:
+    """What the chat loop can reach. Lodestar's own MCP tools are always in;
+    `remote_mcp` adds servers by URL."""
+    remote_mcp: list[RemoteMcpConfig] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "ToolingConfig":
+        d = d or {}
+        rows = d.get("remote_mcp", []) or []
+        return cls(remote_mcp=[RemoteMcpConfig.from_dict(r) for r in rows if isinstance(r, dict)])
+
+
+@dataclass
+class ChatConfig:
+    """How long a generation may take before the chat route gives up.
+
+    The floor is a Nano producing 1024 tokens at a few tokens a second, so
+    ten minutes, not two. A timeout is a 504 to the caller and NOTHING to
+    the cluster's picture of the node - see routes/chat.py.
+    """
+    generation_timeout_seconds: float = 600.0
+    connect_timeout_seconds: float = 10.0
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "ChatConfig":
+        d = d or {}
+        default = cls()
+        return cls(
+            generation_timeout_seconds=_parse_positive_float(
+                d.get("generation_timeout_seconds"), default.generation_timeout_seconds),
+            connect_timeout_seconds=_parse_positive_float(
+                d.get("connect_timeout_seconds"), default.connect_timeout_seconds),
+        )
+
+
+@dataclass
 class RuntimeConfig:
-    """Runtime-specific overrides — agent package path for node updates."""
+    """Runtime-specific overrides.
+
+    `inject_bearer_token`: when a node has no `agent_token` of its own,
+    present Lodestar's own bearer to its Observatory. One secret for the
+    whole cluster instead of one per node. (This was parsed and never read
+    for a long while; the README claimed it worked. Now it does.)
+    `agent_package_path`: the seren-observatory.tar.gz that agent-update
+    pushes to every node.
+    """
     inject_bearer_token: bool = True
     agent_package_path: str = ""
 
@@ -176,6 +253,14 @@ class LodestarConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
+    tooling: ToolingConfig = field(default_factory=ToolingConfig)
+    chat: ChatConfig = field(default_factory=ChatConfig)
+    #: The yaml this config was read from, or None when running on defaults.
+    #: The scheduler keeps its state beside it (README: "next to your config
+    #: file"). It used to be derived from the SEREN_LODESTAR_CONFIG env var
+    #: only, so `--config /etc/seren/lodestar.yaml` sent the tasks to /tmp,
+    #: which is tmpfs on every distro that matters.
+    config_path: Optional[str] = None
 
 
 def _expand_tilde(path: str) -> str:
@@ -250,8 +335,10 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     data: dict[str, Any] = {}
     candidate = path or os.environ.get("SEREN_LODESTAR_CONFIG") or "seren-lodestar.yaml"
     cfg_path = Path(os.path.expanduser(candidate))
+    found_path: Optional[str] = None
 
     if cfg_path.is_file():
+        found_path = str(cfg_path.resolve())
         try:
             # encoding= IS NOT OPTIONAL. Without it Python uses the LOCALE
             # codec - cp1252 on Windows - and seren-lodestar.yaml.sample opens
@@ -273,6 +360,8 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     scheduler = SchedulerConfig.from_dict(data.get("scheduler"))
     runtime = RuntimeConfig.from_dict(data.get("runtime"))
     updates = UpdatesConfig.from_dict(data.get("updates"))
+    tooling = ToolingConfig.from_dict(data.get("tooling"))
+    chat = ChatConfig.from_dict(data.get("chat"))
 
     cfg = LodestarConfig(
         server=server,
@@ -281,6 +370,9 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         scheduler=scheduler,
         runtime=runtime,
         updates=updates,
+        tooling=tooling,
+        chat=chat,
+        config_path=found_path,
     )
 
     # Validate cluster config.

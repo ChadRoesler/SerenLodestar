@@ -41,11 +41,15 @@ def main():
     if args.host:
         cfg.server.host = args.host
 
+    # AFTER the CLI overrides and BEFORE anything else: Lodestar holds every
+    # node's Observatory token, so an open bind with no inbound auth is the
+    # one thing this process must never do quietly. Refused here, at zero
+    # cost, with the three ways out printed.
+    from seren_meninges.exposure import enforce_server
+    enforce_server(cfg.server, service="seren-lodestar", env_prefix="SEREN_LODESTAR",
+                   log=lambda m: print(m, file=sys.stderr))
+
     # Log the cluster topology
-    print(f"[lodestar] config: {cfg.server.host}:{cfg.server.port}", file=sys.stderr)
-    print(f"[lodestar] inbound auth: "
-          + ("DISABLED (no token)" if not cfg.server.bearer_token else "enabled"),
-          file=sys.stderr)
     print(f"[lodestar] cluster: {len(cfg.cluster.nodes)} node(s) configured",
           file=sys.stderr)
     for n in cfg.cluster.nodes:

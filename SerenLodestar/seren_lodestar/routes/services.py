@@ -13,11 +13,6 @@ from ..cluster import JetsonClusterClient
 
 API_VERSION = "v1"
 
-# Known service names that Lodestar routes
-KNOWN_SERVICES = {
-    "llama", "kokoro", "comfy", "chroma", "whisper", "coral", "agent",
-}
-
 router = APIRouter(tags=["services"])
 
 
@@ -40,15 +35,27 @@ def _resolve_agent(cluster, service: str):
 
 
 def _resolve_per_node_agent(cluster, node: str, svc: str):
-    if svc not in KNOWN_SERVICES:
-        return None, JSONResponse(
-            {"error": "unknown_service", "detail": f"'{svc}' is not a known service"},
-            status_code=404,
-        )
+    """The node has to exist; the service has to be one that node reports.
+
+    There used to be a hardcoded KNOWN_SERVICES set here. It still named
+    'chroma' (retired) and 'agent' (renamed), and it did not name a single
+    systemd or docker service the Observatory manages, so the per-node path
+    404'd on searxng while the routed path worked. The node's own last
+    snapshot is the list; if there is no snapshot yet, the Observatory
+    answers for itself.
+    """
     agent = cluster.get_agent(node)
     if agent is None:
         return None, JSONResponse(
             {"error": "unknown_node", "detail": f"'{node}' is not in the cluster config"},
+            status_code=404,
+        )
+    snap = cluster.get_snapshots().get(node)
+    if snap is not None and snap.installed_services and svc not in snap.installed_services:
+        return None, JSONResponse(
+            {"error": "unknown_service",
+             "detail": f"'{node}' does not report a service named '{svc}'",
+             "installed": sorted(snap.installed_services)},
             status_code=404,
         )
     return agent, None
@@ -64,7 +71,7 @@ async def service_manifest(request: Request, service: str):
         return err
     m = await agent.get_service_manifest_async(service)
     if m is None:
-        cluster.mark_node_offline(agent.node_name, f"manifest fetch failed for '{service}'")
+        cluster.mark_node_suspect(agent.node_name, f"manifest fetch failed for '{service}'")
         return JSONResponse(
             {"error": "agent_unreachable",
              "detail": f"agent on '{agent.node_name}' did not respond"},
@@ -81,7 +88,7 @@ async def service_status(request: Request, service: str):
         return err
     s = await agent.get_service_status_async(service)
     if s is None:
-        cluster.mark_node_offline(agent.node_name, f"status fetch failed for '{service}'")
+        cluster.mark_node_suspect(agent.node_name, f"status fetch failed for '{service}'")
         return JSONResponse(
             {"error": "agent_unreachable",
              "detail": f"agent on '{agent.node_name}' did not respond"},
@@ -98,7 +105,7 @@ async def service_health(request: Request, service: str):
         return err
     h = await agent.get_service_health_async(service)
     if h is None:
-        cluster.mark_node_offline(agent.node_name, f"health fetch failed for '{service}'")
+        cluster.mark_node_suspect(agent.node_name, f"health fetch failed for '{service}'")
         return JSONResponse(
             {"error": "agent_unreachable",
              "detail": f"agent on '{agent.node_name}' did not respond"},
