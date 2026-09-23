@@ -41,7 +41,7 @@ dependencies = [
     # seren_meninges.updates, which the [updates] extra below imports. <3
     # because a MAJOR here is an un-defaultable security change, and that is
     # the only thing that should ever force a bump.
-    "seren-meninges>=2.2.0,<3",
+    "seren-meninges>=2.3.0,<3",
     "seren-sinew>=1.0.0,<2",
 ]
 
