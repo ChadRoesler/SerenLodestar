@@ -13,6 +13,7 @@ seren_probe.mcp.server, and seren_workbench.mcp.server.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -106,7 +107,13 @@ def mount_mcp_routes(app: FastAPI) -> Any:
             agent, err = _resolve_agent(cluster, service)
 
         if agent is None:
-            return {"ok": False, "error": err.status_code, "detail": err.body.get("detail")}
+            # `err` is a JSONResponse; its body is bytes, not a dict. This used
+            # to AttributeError and hand the model a stack trace.
+            try:
+                detail = json.loads(err.body).get("detail")
+            except Exception:                         # noqa: BLE001
+                detail = None
+            return {"ok": False, "error": err.status_code, "detail": detail}
 
         actions = {
             "start": agent.start_service_async,

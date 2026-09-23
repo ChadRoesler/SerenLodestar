@@ -32,7 +32,7 @@ def _resolve_package_path(runtime: RuntimeConfig):
     if not resolved.exists():
         return None, JSONResponse({
             "ok": False, "error": "package_not_found",
-            "detail": f"seren-agent package not found at: {resolved}",
+            "detail": f"seren-observatory package not found at: {resolved}",
         }, status_code=409)
     return str(resolved), None
 
@@ -45,6 +45,9 @@ async def broadcast_update(request: Request):
     if error is not None:
         return error
     agents = cluster.agents
+    # Read ONCE and share the bytes. This used to read the whole package per
+    # node, concurrently, through a file handle nothing closed.
+    data = await asyncio.to_thread(Path(package_path).read_bytes)
 
     async def update_one(node_name: str, agent):
         if not agent.agent_update_path:
@@ -52,8 +55,7 @@ async def broadcast_update(request: Request):
                 "ok": False, "node": node_name, "message": None,
                 "error": "agent_update_path not configured for this node",
             }
-        data = await asyncio.to_thread(lambda: open(package_path, "rb").read())
-        result = await agent.push_agent_update_async(data, "seren-agent.tar.gz",
+        result = await agent.push_agent_update_async(data, "seren-observatory.tar.gz",
                                                       agent.agent_update_path)
         if result is not None:
             return {
@@ -92,8 +94,8 @@ async def per_node_update(request: Request, node: str):
             "ok": False, "error": "not_configured",
             "detail": f"agent_update_path is not set for node '{node}'",
         }, status_code=409)
-    data = await asyncio.to_thread(lambda: open(package_path, "rb").read())
-    result = await agent.push_agent_update_async(data, "seren-agent.tar.gz",
+    data = await asyncio.to_thread(Path(package_path).read_bytes)
+    result = await agent.push_agent_update_async(data, "seren-observatory.tar.gz",
                                                   agent.agent_update_path)
     if result is None:
         return JSONResponse({

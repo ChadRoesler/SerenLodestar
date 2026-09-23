@@ -9,6 +9,10 @@
 
 server:
   host: 127.0.0.1   # local-only. Lodestar holds every node's token - set bearer_token before 0.0.0.0
+  # allow_open_lan: false
+  #   A host beyond loopback with no token REFUSES TO START and prints the
+  #   three ways out. Set this true (or <PREFIX>_ALLOW_OPEN_LAN=1) to run open on
+  #   purpose - a trusted LAN, a lab - and it will say so on every boot.
   port: 6361              # family convention: Lodestar
   bearer_token: ""
   # bearer_token_env: "SEREN_LODESTAR_BEARER_TOKEN"  # read from env
@@ -33,11 +37,12 @@ cluster:
   #   agent_token bearer token, if that Observatory sets one. Blank = none.
   #   preferred_for  capabilities to route to this node first. Advisory:
   #               the cluster falls back to whoever actually answers.
-  #   agent_update_path  where a pushed Observatory package lands ON THAT
-  #               NODE. The user differs per platform - a Jetson image is
-  #               usually /home/jetson, a Spark or NUC is whatever account
-  #               runs the service - so set it per node rather than
-  #               assuming.
+  #   agent_update_path  the DIRECTORY on that node where a pushed
+  #               Observatory package lands; seren-observatory-update.sh must
+  #               live in it, and it must be under that user's home. The user
+  #               differs per platform - a Jetson image is usually
+  #               /home/jetson, a Spark or NUC is whatever account runs the
+  #               service - so set it per node rather than assuming.
   #   is_host     exactly one node should be true: the one hosting the
   #               primary inference service.
   #   nickname    free-text label for the dashboard.
@@ -46,7 +51,7 @@ cluster:
       agent_url: "http://192.168.1.100:7777"
       agent_token: ""
       preferred_for: ["whisper", "kokoro"]
-      agent_update_path: "/home/jetson/seren-observatory/seren-observatory.tar.gz"
+      agent_update_path: "/home/jetson/seren-observatory"
       is_host: false
       nickname: "nano-1"
 
@@ -54,7 +59,7 @@ cluster:
       agent_url: "http://192.168.1.101:7777"
       agent_token: ""
       preferred_for: ["llama", "comfy"]
-      agent_update_path: "/home/jetson/seren-observatory/seren-observatory.tar.gz"
+      agent_update_path: "/home/jetson/seren-observatory"
       is_host: true
       nickname: "xavier-1"
 
@@ -64,16 +69,42 @@ cluster:
     #   agent_url: "http://192.168.1.102:7777"
     #   agent_token: ""
     #   preferred_for: ["llama"]
-    #   agent_update_path: "/home/seren/seren-observatory/seren-observatory.tar.gz"
+    #   agent_update_path: "/home/seren/seren-observatory"
     #   is_host: false
     #   nickname: "spark-1"
 
 runtime:
+  # Present Lodestar's own bearer to any node whose agent_token is blank:
+  # one secret for the cluster instead of one per node.
   inject_bearer_token: true
   agent_package_path: ""   # set to /path/to/seren-observatory.tar.gz for updates
 
 scheduler:
-  persistence_dir: ""      # defaults to ./scheduler/ next to config file
+  # Where scheduled tasks are kept between restarts. Empty = a scheduler/
+  # directory beside THIS file, or ~/seren-lodestar/scheduler when running
+  # on defaults with no file. Never /tmp.
+  persistence_dir: ""
+
+# ── Tools the chat can call ─────────────────────────────────────────────
+#
+# Lodestar's own tools (cluster refresh, service control, the scheduler) are
+# always available to the chat loop. Add other MCP servers here - Workbench
+# is the usual one, it is where memory, search and time live. Token pointers
+# are the family's: inline / env / keyring.
+tooling:
+  remote_mcp: []
+  # - name: workbench
+  #   url: "http://127.0.0.1:7425/mcp/"
+  #   bearer_token_env: "SEREN_WORKBENCH_TOKEN"
+
+# ── Chat ────────────────────────────────────────────────────────────────
+#
+# How long one generation may take. The floor is a Nano doing 1024 tokens at
+# a few tokens a second, so minutes, not seconds. A timeout is a 504 to the
+# caller and does NOT mark the node offline.
+chat:
+  generation_timeout_seconds: 600
+  connect_timeout_seconds: 10
 
 # ── Update checking ───────────────────────────────────────────────────
 #
@@ -82,8 +113,9 @@ scheduler:
 # update is `pip install -U seren-lodestar` plus a service restart, which is
 # your supervisor's job (NSSM, systemd), not this process's.
 #
-# Needs the extra:  pip install 'seren-lodestar[updates]'
-# Without it, GET / reports status="unavailable" and says why.
+# Checking is built in (seren-meninges carries it); `enabled: false` here
+# or SEREN_LODESTAR_UPDATES_ENABLED=0 switches it off for a box that must
+# not make outbound calls.
 updates:
   enabled: true
   check_interval_hours: 6      # cached; never checked per-request

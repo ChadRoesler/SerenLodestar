@@ -96,7 +96,9 @@ doesn't need to know which machine that is. If you *do* want to be specific,
 `/api/v1/node/xavier/service/llama/start` bypasses routing entirely.
 
 **Chat carries a tool loop.** `POST /api/v1/chat` runs inference with tools
-attached; `/chat/stream` does it streaming. The dialect that formats tool calls
+attached; `/chat/stream` does it streaming, one generation per round, with the
+answer arriving as it is produced. Lodestar's own tools are always attached;
+`tooling.remote_mcp` adds other MCP servers (Workbench, for memory and search). The dialect that formats tool calls
 for the model lives behind `IToolDialect` — `QwenHermesDialect` is the shipped
 one, and swapping model families means writing a new dialect, not editing the
 loop. `POST /api/v1/chat/inspect` shows you exactly what got injected when the
@@ -104,8 +106,10 @@ answer looks wrong.
 
 **The scheduler fires tools on a clock.** Cron expressions or relative offsets
 (`2h`, `30m`, `90s`). State persists to `scheduler.persistence_dir`, defaulting
-to a `scheduler/` directory next to your config file. Tasks survive a restart;
-one-shots delete themselves after firing, recurring ones re-arm.
+to a `scheduler/` directory next to your config file (or
+`~/seren-lodestar/scheduler` when running on defaults). Tasks survive a
+restart; one-shots delete themselves after firing, recurring ones re-arm. A
+task fires through the same tool client the chat uses.
 
 **Agent updates push outward.** `POST /api/v1/system/agent-update` ships a
 packaged Observatory to every node at its configured `agent_update_path`.
@@ -157,10 +161,11 @@ network stops being trusted.
 | `GET /api/v1/system/version` | public — no token |
 | `GET /api/v1/system/status` | per-node status |
 | `GET /api/v1/system/health` | cluster health |
-| `POST /api/v1/system/reclaim` | stop services to free memory |
+| `POST /api/v1/system/reclaim` | stop the GPU daemons (never the constellation, unless told) |
 | `POST /api/v1/system/reboot/{node}` | reboot a node |
 | `POST /api/v1/system/reboot/{node}/cancel` | change your mind |
 | `POST /api/v1/system/agent-update` | push Observatory to every node |
+| `POST /api/v1/node/{node}/agent-update` | push Observatory to one node |
 | `POST /api/v1/cluster/refresh` | re-probe all nodes |
 | `POST /api/v1/cluster/refresh/{node}` | re-probe one |
 | `GET /api/v1/cluster/capabilities` | the capability map |

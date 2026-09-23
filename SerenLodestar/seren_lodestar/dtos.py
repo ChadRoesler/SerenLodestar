@@ -18,8 +18,8 @@ class PingResponse:
 
 @dataclass
 class VersionResponse:
-    agent_version: str
-    manifest_schema: int
+    agent_version: str = ""      # Observatory sends `observatory_version`; aliased in agent_client
+    manifest_schema: int = 0
 
 
 @dataclass
@@ -138,7 +138,9 @@ class ReclaimFailure:
 @dataclass
 class ReclaimResponse:
     stopped: list[str]
-    kept: list[str]
+    #: Observatory sends {service, why} rows so a caller can see WHY a service
+    #: stayed up; an older Observatory sends bare names. Both pass through.
+    kept: list[Any]
     failed: Optional[list[ReclaimFailure]] = None
 
 
@@ -261,19 +263,6 @@ class ClusterOptions:
     health_strict_mode: bool = False
 
 
-# ── Runtime options (from YAML) ────────────────────────────────────────────
-
-@dataclass
-class RuntimeOptions:
-    host: str = "0.0.0.0"
-    port: int = 6361
-    bearer_token: str = ""
-    inject_bearer_token: bool = True
-    agent_package_path: str = ""
-    scheduler_persistence_dir: str = ""
-
-
-@dataclass
-class RuntimeHostOptions:
-    runtime: RuntimeOptions = field(default_factory=RuntimeOptions)
-    cluster: ClusterOptions = field(default_factory=ClusterOptions)
+# RuntimeOptions / RuntimeHostOptions used to live here: a second config
+# family from the C# port that config.py says was removed and nothing
+# imported. Gone now; the live config types are in config.py.

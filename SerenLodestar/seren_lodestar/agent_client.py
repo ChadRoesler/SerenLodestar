@@ -49,7 +49,7 @@ log = logging.getLogger("seren_lodestar.agent_client")
 class JetsonAgentClient:
     """Typed HTTP client for one node's Observatory API."""
 
-    def __init__(self, options: JetsonNodeOptions, log_fn=None):
+    def __init__(self, options: JetsonNodeOptions, log_fn=None, default_token: str = ""):
         if not options.name:
             raise ValueError("node name must not be empty")
         if not options.agent_url:
@@ -57,15 +57,17 @@ class JetsonAgentClient:
 
         self._node_name = options.name
         self._log = log_fn or (lambda msg: log.info(f"[{self._node_name}] {msg}"))
-        self._agent_token = options.agent_token
+        # The node's own token wins; Lodestar's own bearer fills in when the
+        # operator chose runtime.inject_bearer_token (one secret, every node).
+        self._agent_token = options.agent_token or default_token
         self._agent_update_path = options.agent_update_path
         self._is_host = options.is_host
         self._nickname = options.nickname or ""
 
         base = options.agent_url.rstrip("/") + "/"
         headers = {}
-        if options.agent_token:
-            headers["Authorization"] = f"Bearer {options.agent_token}"
+        if self._agent_token:
+            headers["Authorization"] = f"Bearer {self._agent_token}"
         self._client = httpx.AsyncClient(base_url=base, headers=headers, timeout=35.0)
 
     # ── properties ──────────────────────────────────────────────────────────
@@ -105,15 +107,25 @@ class JetsonAgentClient:
         return await self._get_json("api/v1/system/thermal", ThermalResponse)
 
     async def get_services_async(self) -> Optional[ServicesResponse]:
-        return await self._get_json("api/v1/system/services", ServicesResponse)
+        resp = await self._get_json("api/v1/system/services", ServicesResponse)
+        if resp is not None and isinstance(resp.services, dict):
+            # Observatory allows a manifest with no `service` key (the name
+            # falls back to the filename stem). The key we were handed IS the
+            # name; fill it in rather than fail the whole node over one file.
+            for key, entry in resp.services.items():
+                manifest = getattr(entry, "manifest", None)
+                if manifest is not None and not getattr(manifest, "service", None):
+                    manifest.service = key
+        return resp
 
     async def get_health_async(self) -> Optional[HealthResponse]:
         return await self._get_json("api/v1/system/health", HealthResponse)
 
     async def reclaim_async(
-        self, exclude: Optional[list[str]] = None
+        self, exclude: Optional[list[str]] = None, *,
+        include: Optional[list[str]] = None, everything: bool = False,
     ) -> Optional[ReclaimResponse]:
-        body = {"exclude": exclude or []}
+        body = {"exclude": exclude or [], "include": include or [], "all": bool(everything)}
         return await self._post_json("api/v1/system/reclaim", body, ReclaimResponse)
 
     async def reboot_async(
@@ -285,21 +297,64 @@ class JetsonAgentClient:
 
 # ── helper: dict -> dataclass ───────────────────────────────────────────────
 
+#: Keys an Observatory sends under a different name than the DTO field.
+#: `observatory_version` is what /system/version has said since the rename;
+#: the DTO still says agent_version, and the mismatch made version_async
+#: return None on every node without a word.
+_ALIASES = {"observatory_version": "agent_version"}
+
+
 def _from_dict(data, dto_class):
-    """dict -> dataclass, recursing into nested dataclasses, list[...] and dict[str, ...]."""
+    """dict -> dataclass, recursing into nested dataclasses, list[...] and dict[str, ...].
+
+    LENIENT ON PURPOSE. A required dataclass field that the payload lacks is
+    filled with an empty value of its type instead of raising TypeError. The
+    strict version turned ONE manifest with no `service` key into "agent
+    returned null" for the whole node - every service on it unroutable
+    because of a file the Observatory itself accepts.
+    """
     import dataclasses, typing
     if data is None:
         return None
     if not dataclasses.is_dataclass(dto_class):
         return data
     hints = typing.get_type_hints(dto_class)
-    field_names = {f.name for f in dataclasses.fields(dto_class)}
+    fields = {f.name: f for f in dataclasses.fields(dto_class)}
     kwargs = {}
     for k, v in (data.items() if isinstance(data, dict) else []):
         name = k.replace("-", "_").replace(".", "_")
-        if name in field_names:
+        name = _ALIASES.get(name, name)
+        if name in fields:
             kwargs[name] = _coerce(v, hints.get(name))
+    for name, f in fields.items():
+        if name in kwargs:
+            continue
+        if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
+            kwargs[name] = _empty_for(hints.get(name))
     return dto_class(**kwargs)
+
+
+def _empty_for(hint):
+    """The zero value of a type hint, for a required field the wire omitted."""
+    import dataclasses, typing
+    origin = typing.get_origin(hint)
+    if origin is typing.Union:
+        return None
+    if hint is str:
+        return ""
+    if hint is int:
+        return 0
+    if hint is float:
+        return 0.0
+    if hint is bool:
+        return False
+    if origin in (list,) or hint is list:
+        return []
+    if origin in (dict,) or hint is dict:
+        return {}
+    if dataclasses.is_dataclass(hint):
+        return None
+    return None
 
 def _coerce(value, hint):
     import dataclasses, typing

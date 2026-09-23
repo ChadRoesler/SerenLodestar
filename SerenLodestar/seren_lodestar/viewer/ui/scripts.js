@@ -1,11 +1,11 @@
 'use strict';
 /* global getToken, escapeHtml, showTab — provided by the SerenMeninges shell.
  *
- * Carved from the pre-baseplate RuntimeHost monolith. The shell now owns the
+ * Carved from the pre-baseplate RuntimeHost (now Lodestar) monolith. The shell now owns the
  * page chrome, the header, and the 🔑 bearer-token modal. Two deliberate
  * changes from the monolith:
  *   • its own api() became hostApi() — same-origin fetch (the viewer is served
- *     by RuntimeHost itself) with the bearer pulled from the shell's getToken().
+ *     by Lodestar itself) with the bearer pulled from the shell's getToken().
  *     Kept the null-return + banner() + EXPECTED_STATUS(404/503) contract so
  *     every caller is unchanged except the name.
  *   • its own escapeHtml() is gone — we use the shell's global.
@@ -51,7 +51,7 @@ async function hostApi(path, opts = {}) {
         banner(null);
         return await resp.json();
     } catch (e) {
-        banner(`Cannot reach RuntimeHost — ${e.message}`);
+        banner(`Cannot reach Lodestar — ${e.message}`);
         return null;
     }
 }
@@ -972,10 +972,10 @@ async function fireAgentUpdate(nodeName) {
     if (!resp) {
         if (isBroadcast && resultEl) {
             resultEl.className = 'update-result err';
-            resultEl.textContent = 'Update failed: no response from RuntimeHost.';
+            resultEl.textContent = 'Update failed: no response from Lodestar.';
             resultEl.style.display = '';
         } else {
-            setModalFlash('Agent update failed: no response from RuntimeHost.', 'err');
+            setModalFlash('Observatory update failed: no response from Lodestar.', 'err');
         }
         return;
     }
