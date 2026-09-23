@@ -20,7 +20,10 @@ def test_default_config():
     """With no config file or env, defaults should be sane."""
     cfg = load_config()
     assert cfg.server.port == 6361
-    assert cfg.server.host == "0.0.0.0"
+    # Loopback by default since seren-meninges 2.3.0. Lodestar holds every
+    # node's Observatory token, so it is the last service that should land on
+    # the LAN because nobody wrote a host: line.
+    assert cfg.server.host == "127.0.0.1"
     assert not cfg.server.bearer_token
 
 
