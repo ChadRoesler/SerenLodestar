@@ -432,3 +432,20 @@ FodyWeavers.xsd
 serenlodestar/_version.py
 /SerenLodestar/seren_lodestar.egg-info
 /SerenLodestar/seren_lodestar/_version.py
+
+**/build/
+SerenLodestar/dist/
+SerenLodestar/build/
+# Test artifacts
+.pytest_cache/
+
+**/_version.py
+# -- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
