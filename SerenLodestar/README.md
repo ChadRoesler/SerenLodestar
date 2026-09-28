@@ -222,11 +222,9 @@ fine on a bench and wrong on anything routable.
 }
 ```
 
-Opt-in, because a box that never leaves the LAN has no business calling PyPI:
-
-```bash
-pip install 'seren-lodestar[updates]'
-```
+On by default: update checking is part of the core install (it lives in
+`seren-meninges`). A box that never leaves the LAN has no business calling
+PyPI; set `enabled: false` there. The knobs:
 
 ```yaml
 updates:
@@ -238,8 +236,9 @@ updates:
 
 The result is cached and the check never happens in the request path, so `/`
 stays fast. `updates.status` is always one of `ok`, `disabled`, `unavailable`
-(the extra isn't installed) or `error` — **never absent, and never a silent
-"you're fine" when it couldn't actually check.** `SEREN_LODESTAR_UPDATES_ENABLED=false`
+(a broken install: the checker's dependencies are missing) or `error`
+— **never absent, and never a silent "you're fine" when it couldn't actually
+check.** `SEREN_LODESTAR_UPDATES_ENABLED=false`
 turns it off without editing config.
 
 Note `/` is public, so this publishes "running 1.4.2, which is behind" to anyone
