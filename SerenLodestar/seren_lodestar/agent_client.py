@@ -134,6 +134,23 @@ class JetsonAgentClient:
         body = {"delay_minutes": delay_minutes}
         return await self._post_json("api/v1/system/reboot", body, RebootResponse)
 
+    async def ripple_async(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """Forward a ripple to this node's Observatory. The Observatory's own
+        status and body come back as they are: its reasons ("not set up on this
+        node", "chad is not logged on") are the answer, and a None - what
+        _post_json makes of any non-2xx - would erase them."""
+        try:
+            resp = await self._client.post("api/v1/system/ripple", json=body, timeout=30.0)
+        except Exception as ex:  # noqa: BLE001
+            return 502, {"ok": False, "error": f"the node's Observatory did not answer: {type(ex).__name__}: {ex}"}
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"ok": resp.is_success, "error": resp.text[:400]}
+        if not isinstance(data, dict):
+            data = {"ok": resp.is_success, "answer": data}
+        return resp.status_code, data
+
     async def reboot_cancel_async(self) -> Optional[RebootCancelResponse]:
         return await self._post_json(
             "api/v1/system/reboot/cancel", None, RebootCancelResponse

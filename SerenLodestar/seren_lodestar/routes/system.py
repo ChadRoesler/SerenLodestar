@@ -162,6 +162,51 @@ async def system_reclaim(request: Request):
     return {"ok": all_ok, "nodes": results}
 
 
+@router.post(f"/api/{API_VERSION}/system/ripple")
+async def system_ripple(request: Request):
+    """Route a ripple - the hippocampus asking the main model for a brief, or
+    for a review - to wherever the model lives (config ripple.target):
+
+      <node>  forward to that node's Observatory with the token Lodestar holds
+      local   run the configured command on this box, as run_as
+      self    Lodestar's own model loop (not built yet)
+
+    Body: {event, message, draft_id?}. The command is never the caller's. The
+    same path as the Observatory's, so a hippocampus's ripple.url looks alike
+    whichever it points at.
+    """
+    cfg = request.app.state.config.ripple
+    body = await _optional_json(request)
+    target = cfg.target
+    if not target:
+        return JSONResponse({"ok": False, "error": "this Lodestar does not route ripples (ripple.target is empty)"},
+                            status_code=409)
+    if target == "self":
+        return JSONResponse({"ok": False, "error": "answering a ripple with Lodestar's own model loop is not "
+                                                   "built yet - set ripple.target to a node or 'local'"},
+                            status_code=501)
+    if target == "local":
+        runner = getattr(request.app.state, "ripple_runner", None)
+        if runner is None:
+            from seren_sinew.ripple import RippleRunner
+            from pathlib import Path
+            runner = RippleRunner(command=cfg.command, run_as=cfg.run_as, cwd=cfg.cwd,
+                                  timeout_seconds=cfg.timeout_seconds, stdin=cfg.stdin,
+                                  log_path=Path.home() / "seren-logs" / "ripple.log")
+            request.app.state.ripple_runner = runner
+        status, answer = await asyncio.to_thread(
+            runner.run, str(body.get("event") or "ripple"), str(body.get("message") or ""),
+            draft_id=str(body.get("draft_id") or ""), payload=body)
+        return JSONResponse({**answer, "routed_to": "local"}, status_code=status)
+    cluster: JetsonClusterClient = request.app.state.cluster
+    agent = cluster.get_agent(target)
+    if agent is None:
+        return JSONResponse({"ok": False, "error": f"ripple.target names '{target}', which is not a node in this "
+                                                   f"cluster"}, status_code=404)
+    status, answer = await agent.ripple_async(body)
+    return JSONResponse({**answer, "routed_to": target}, status_code=status)
+
+
 @router.post(f"/api/{API_VERSION}/system/reboot/{{node}}")
 async def reboot_node(request: Request, node: str):
     cluster: JetsonClusterClient = request.app.state.cluster
