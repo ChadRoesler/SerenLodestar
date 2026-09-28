@@ -208,6 +208,50 @@ class ChatConfig:
 
 
 @dataclass
+class RippleConfig:
+    """Where a ripple goes when a hippocampus sends it here (POST
+    /api/v1/system/ripple). A ripple is the hippocampus reaching the main
+    model - a brief at bedtime, a review when drafts wait. Lodestar knows the
+    cluster, so the hippocampus needs one address and one token, and moving
+    the model is a change here, not a hunt for tokens (Design note:).
+
+    target:
+      ""        - off: this Lodestar does not route ripples (409)
+      <node>    - forward to that node's Observatory, with the agent token
+                  Lodestar already holds for it; its ripple config runs it
+      "local"   - run command below on THIS box, as run_as (no Observatory
+                  needed where Lodestar and the model share a box)
+      "self"    - answer with Lodestar's own model loop (not built yet: 501)
+
+    command / run_as / cwd / timeout_seconds / stdin are for "local" and mean
+    what they mean in seren_sinew.ripple.
+    """
+    target: str = ""
+    command: Any = field(default_factory=lambda: ["claude", "-p", "{message}"])
+    run_as: str = ""
+    cwd: str = ""
+    timeout_seconds: float = 900.0
+    stdin: bool = False
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "RippleConfig":
+        d = d if isinstance(d, dict) else {}
+        default = cls()
+        cmd = d.get("command", default.command)
+        if not (isinstance(cmd, str) or (isinstance(cmd, list) and all(isinstance(x, str) for x in cmd))):
+            log.warning("ripple.command must be a string or a list of strings; using the default")
+            cmd = default.command
+        return cls(
+            target=str(d.get("target") or "").strip(),
+            command=cmd,
+            run_as=str(d.get("run_as") or "").strip(),
+            cwd=str(d.get("cwd") or ""),
+            timeout_seconds=_parse_positive_float(d.get("timeout_seconds"), default.timeout_seconds),
+            stdin=bool(d.get("stdin", False)),
+        )
+
+
+@dataclass
 class RuntimeConfig:
     """Runtime-specific overrides.
 
@@ -255,6 +299,7 @@ class LodestarConfig:
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     tooling: ToolingConfig = field(default_factory=ToolingConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
+    ripple: RippleConfig = field(default_factory=RippleConfig)
     #: The yaml this config was read from, or None when running on defaults.
     #: The scheduler keeps its state beside it (README: "next to your config
     #: file"). It used to be derived from the SEREN_LODESTAR_CONFIG env var
@@ -362,6 +407,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     updates = UpdatesConfig.from_dict(data.get("updates"))
     tooling = ToolingConfig.from_dict(data.get("tooling"))
     chat = ChatConfig.from_dict(data.get("chat"))
+    ripple = RippleConfig.from_dict(data.get("ripple"))
 
     cfg = LodestarConfig(
         server=server,
@@ -372,6 +418,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         updates=updates,
         tooling=tooling,
         chat=chat,
+        ripple=ripple,
         config_path=found_path,
     )
 

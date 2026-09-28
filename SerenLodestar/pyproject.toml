@@ -42,7 +42,7 @@ dependencies = [
     # because a MAJOR here is an un-defaultable security change, and that is
     # the only thing that should ever force a bump.
     "seren-meninges>=2.4.0,<3",
-    "seren-sinew>=1.0.0,<2",
+    "seren-sinew>=1.6.5,<2",
 ]
 
 [project.optional-dependencies]
