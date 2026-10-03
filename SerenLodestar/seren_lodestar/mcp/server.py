@@ -229,6 +229,30 @@ def mount_mcp_routes(app: FastAPI) -> Any:
 
     # ── Tool: cluster-capabilities ───────────────────────────────────────
     @mcp_server.tool()
+    async def backup_status() -> dict:
+        """What Lodestar has stashed of every node's services' snapshots -
+        per node and service, the newest of each - and the last pull."""
+        svc = getattr(app.state, "backup", None)
+        if svc is None:
+            return {"ok": False, "error": "backups are off (backup.enabled: false)"}
+        return {"ok": True, **svc.describe()}
+
+    @mcp_server.tool()
+    async def backup_pull(node: str | None = None, service: str | None = None,
+                          take_fresh: bool | None = None, reason: str = "asked over MCP") -> dict:
+        """Pull snapshots now: ask each online node (or one) for a fresh
+        snapshot of each service that keeps one (take_fresh, default from
+        config), fetch what is not stashed here yet, verify each against its
+        manifest, and keep it under the backup dir. Blocks until done - a
+        snapshot copies a store, so tens of seconds per service. Returns
+        the pull report: what was stashed, skipped, or failed, per service."""
+        svc = getattr(app.state, "backup", None)
+        if svc is None:
+            return {"ok": False, "error": "backups are off (backup.enabled: false)"}
+        rep = await svc.pull(reason=reason, node=node, service=service, take_fresh=take_fresh)
+        return {"ok": not rep.errors, **rep.as_dict()}
+
+    @mcp_server.tool()
     async def cluster_capabilities() -> dict:
         """Return the capability map — which services are on which nodes."""
         cluster = getattr(app.state, "cluster", None)

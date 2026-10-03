@@ -60,6 +60,7 @@ from .routes import services as services_routes
 from .routes import scheduler as scheduler_routes
 from .routes import chat as chat_routes
 from .routes import agent_update as agent_update_routes
+from .routes import backup as backup_routes
 
 from seren_meninges import get_version
 from seren_meninges.updates import updates_payload
@@ -193,8 +194,22 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
         )
         app.state.discovery = discovery
 
-        # Start services
+        # Backups: pull every node's services' snapshots and stash them here
+        # (seren_lodestar.backup). Off with backup.enabled: false.
         import asyncio
+        app.state.backup = None
+        _pull_task = None
+        if cfg.backup.enabled:
+            from .backup import BackupService, pull_loop
+            from .config import resolved_backup_dir
+            app.state.backup = BackupService(cfg.backup, cluster, resolved_backup_dir(cfg),
+                                             log_fn=lambda m: log.info(f"[backup] {m}"))
+            if cfg.backup.every_hours > 0:
+                _pull_task = asyncio.ensure_future(pull_loop(app.state.backup))
+            log.info(f"backups: stash at {app.state.backup.root}"
+                     + (f", a pull every {cfg.backup.every_hours:g}h" if cfg.backup.every_hours > 0 else ", pulls on request"))
+
+        # Start services
         asyncio.ensure_future(discovery.start())
         log.info("discovery service started")
 
@@ -210,6 +225,8 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
             yield
 
         # Shutdown
+        if _pull_task is not None:
+            _pull_task.cancel()
         await cluster.aclose()
         if scheduler:
             await scheduler.stop()
@@ -277,6 +294,7 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
     app.include_router(cluster_routes.router)
     app.include_router(services_routes.router)
     app.include_router(scheduler_routes.router)
+    app.include_router(backup_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(agent_update_routes.router)
 
