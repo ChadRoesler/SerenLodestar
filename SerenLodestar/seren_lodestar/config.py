@@ -300,12 +300,29 @@ class LodestarConfig:
     tooling: ToolingConfig = field(default_factory=ToolingConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
     ripple: RippleConfig = field(default_factory=RippleConfig)
+    backup: "BackupConfig" = field(default_factory=lambda: _backup_cfg())
     #: The yaml this config was read from, or None when running on defaults.
     #: The scheduler keeps its state beside it (README: "next to your config
     #: file"). It used to be derived from the SEREN_LODESTAR_CONFIG env var
     #: only, so `--config /etc/seren/lodestar.yaml` sent the tasks to /tmp,
     #: which is tmpfs on every distro that matters.
     config_path: Optional[str] = None
+
+
+def _backup_cfg(d: Optional[dict[str, Any]] = None):
+    # imported here: backup.py pulls in seren_sinew, which config must not need at import
+    from .backup import BackupConfig
+    return BackupConfig.from_dict(d)
+
+
+def resolved_backup_dir(cfg: "LodestarConfig") -> Path:
+    """Where pulled snapshots go: backup.dir, else `backups` beside the config
+    file, else ~/seren-lodestar/backups."""
+    if cfg.backup.dir.strip():
+        return Path(_expand_tilde(cfg.backup.dir.strip())).resolve()
+    if cfg.config_path:
+        return Path(cfg.config_path).resolve().parent / "backups"
+    return Path.home() / "seren-lodestar" / "backups"
 
 
 def _expand_tilde(path: str) -> str:
@@ -408,6 +425,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     tooling = ToolingConfig.from_dict(data.get("tooling"))
     chat = ChatConfig.from_dict(data.get("chat"))
     ripple = RippleConfig.from_dict(data.get("ripple"))
+    backup = _backup_cfg(data.get("backup"))
 
     cfg = LodestarConfig(
         server=server,
@@ -419,6 +437,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         tooling=tooling,
         chat=chat,
         ripple=ripple,
+        backup=backup,
         config_path=found_path,
     )
 

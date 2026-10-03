@@ -261,6 +261,49 @@ class JetsonAgentClient:
 
     # ── internal HTTP helpers ───────────────────────────────────────────────
 
+    # ── what a service keeps, through its node (seren_sinew.stores, proxied
+    # by the Observatory's stores_routes) ─────────────────────────────────
+    async def get_service_stores_async(self, service: str) -> Optional[dict[str, Any]]:
+        """What the service keeps and its snapshots; None when it keeps none
+        (404), is not installed, or did not answer."""
+        return await self._get_json_raw(f"api/v1/service/{quote(service, safe='')}/stores")
+
+    async def list_service_snapshots_async(self, service: str) -> Optional[dict[str, Any]]:
+        return await self._get_json_raw(f"api/v1/service/{quote(service, safe='')}/stores/snapshots")
+
+    async def take_service_snapshot_async(self, service: str, reason: str = "Lodestar asked") -> Optional[dict[str, Any]]:
+        """Ask the service for a fresh snapshot (a mutating call: the
+        Observatory's interlock applies). The listing row, or None."""
+        path = f"api/v1/service/{quote(service, safe='')}/stores/snapshot"
+        try:
+            resp = await self._client.post(path, json={"reason": reason}, timeout=180.0)
+            if not resp.is_success:
+                self._log(f"POST {path} -> HTTP {resp.status_code}")
+                return None
+            return (resp.json() or {}).get("snapshot")
+        except httpx.TimeoutException:
+            self._log(f"POST {path} -> timeout")
+            return None
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"POST {path} -> {type(ex).__name__}: {ex}")
+            return None
+
+    async def get_service_snapshot_archive_async(self, service: str, snapshot_id: str) -> Optional[bytes]:
+        """One snapshot as a tar.gz, or None."""
+        path = f"api/v1/service/{quote(service, safe='')}/stores/snapshots/{quote(snapshot_id, safe='')}/archive"
+        try:
+            resp = await self._client.get(path, timeout=300.0)
+            if not resp.is_success:
+                self._log(f"GET {path} -> HTTP {resp.status_code}")
+                return None
+            return resp.content
+        except httpx.TimeoutException:
+            self._log(f"GET {path} -> timeout")
+            return None
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"GET {path} -> {type(ex).__name__}: {ex}")
+            return None
+
     async def _get_json(self, path: str, dto_class: type) -> Optional[Any]:
         try:
             resp = await self._client.get(path)
