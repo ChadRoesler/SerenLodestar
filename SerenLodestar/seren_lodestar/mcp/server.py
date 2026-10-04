@@ -253,6 +253,21 @@ def mount_mcp_routes(app: FastAPI) -> Any:
         return {"ok": not rep.errors, **rep.as_dict()}
 
     @mcp_server.tool()
+    async def backup_rehearse(node: str | None = None, service: str | None = None,
+                              snapshot_id: str | None = None, reason: str = "asked over MCP") -> dict:
+        """A restore's dry run of what is stashed: each stashed snapshot (the
+        newest per service, or snapshot_id) is verified here, sent down
+        through its node's Observatory to the service it came from, restored
+        there into a scratch folder, opened and counted against its manifest
+        with the tombstones replayed on the copy, then removed. Nothing is
+        restored and no live store is written to. Blocks until done. Returns
+        the report per node and service; ok is true when all passed."""
+        svc = getattr(app.state, "backup", None)
+        if svc is None:
+            return {"ok": False, "error": "backups are off (backup.enabled: false)"}
+        return await svc.rehearse(node=node, service=service, snapshot_id=snapshot_id, reason=reason)
+
+    @mcp_server.tool()
     async def cluster_capabilities() -> dict:
         """Return the capability map — which services are on which nodes."""
         cluster = getattr(app.state, "cluster", None)

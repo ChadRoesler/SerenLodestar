@@ -288,6 +288,30 @@ class JetsonAgentClient:
             self._log(f"POST {path} -> {type(ex).__name__}: {ex}")
             return None
 
+    async def rehearse_service_archive_async(self, service: str, data: bytes) -> dict[str, Any]:
+        """Send one snapshot (a tar.gz) down to the service for a restore's
+        dry run; the service's report. Never None: when the node or the
+        service could not be asked, the answer says so with ok False."""
+        path = f"api/v1/service/{quote(service, safe='')}/stores/rehearse"
+        try:
+            resp = await self._client.post(path, content=data, headers={"Content-Type": "application/gzip"},
+                                           timeout=900.0)
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+            if resp.is_success and isinstance(body, dict):
+                return body
+            why = (body or {}).get("detail") or (body or {}).get("error") if isinstance(body, dict) else None
+            self._log(f"POST {path} -> HTTP {resp.status_code}")
+            return {"ok": False, "problems": [f"the node answered {resp.status_code}: {why or resp.text[:200]}"]}
+        except httpx.TimeoutException:
+            self._log(f"POST {path} -> timeout")
+            return {"ok": False, "problems": ["the rehearsal did not answer in time"]}
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"POST {path} -> {type(ex).__name__}: {ex}")
+            return {"ok": False, "problems": [f"{type(ex).__name__}: {ex}"]}
+
     async def get_service_snapshot_archive_async(self, service: str, snapshot_id: str) -> Optional[bytes]:
         """One snapshot as a tar.gz, or None."""
         path = f"api/v1/service/{quote(service, safe='')}/stores/snapshots/{quote(snapshot_id, safe='')}/archive"

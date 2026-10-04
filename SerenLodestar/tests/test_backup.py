@@ -52,6 +52,9 @@ class FakeAgent:
         rows = self.keepers[svc].list()
         return {"ok": True, "count": len(rows), "snapshots": rows}
 
+    async def rehearse_service_archive_async(self, svc, data):
+        return self.keepers[svc].rehearse_archive(data)
+
     async def get_service_snapshot_archive_async(self, svc, sid):
         data = self.keepers[svc].archive(sid)
         if data is None:
@@ -183,3 +186,40 @@ def test_off_says_so_and_the_default_place_is_beside_the_config(tmp_path):
     assert resolved_backup_dir(cfg) == (tmp_path / "backups").resolve()
     assert BackupConfig.from_dict({"every_hours": "nope", "max_per_pull": 0}).every_hours == 24.0
     assert BackupConfig.from_dict({"max_per_pull": 0}).max_per_pull == 1
+
+
+def test_a_rehearsal_proves_the_stash_on_the_node_it_came_from(tmp_path):
+    """Design note: 'backups are useless if you can't validate them'.
+    The stashed snapshot goes back down to the service for a dry run."""
+    svc, agent, mem, loci = _world(tmp_path)
+    mem.check = lambda restored, man, snap: {"read": (restored["it"] / "seren-memory.json").read_text()}
+    assert asyncio.run(svc.rehearse())["ok"] is False, "nothing stashed: nothing proved, and it says to pull"
+    asyncio.run(svc.pull("first"))
+    rep = asyncio.run(svc.rehearse(reason="the first one"))
+    assert rep["ok"] and rep["dry_run"] and (rep["rehearsed"], rep["passed"]) == (2, 2), rep
+    m = rep["nodes"]["desktop"]["SerenMemory-wren"]
+    assert m["ok"] and m["source"] == "sent" and m["stash_verified"] and m["check"] == {"read": "the memories"}
+    assert m["live_store_touched"] is False and len(mem.list()) == 1, "nothing was restored, nothing was kept"
+    assert svc.describe()["last_rehearsal"]["reason"] == "the first one"
+    # one service, one snapshot; and a stash that rotted is caught here, before it is sent
+    sid = m["snapshot"]
+    one = asyncio.run(svc.rehearse(node="desktop", service="SerenLoci-wren"))
+    assert one["rehearsed"] == 1 and one["ok"]
+    assert asyncio.run(svc.rehearse(service="SerenMemory-wren", snapshot_id="nope"))["ok"] is False
+    (tmp_path / "stash" / "desktop" / "SerenMemory-wren" / sid / "raw" / "it" / "seren-memory.json").write_text("rot")
+    bad = asyncio.run(svc.rehearse(service="SerenMemory-wren"))
+    assert bad["ok"] is False and "no longer matches its manifest" in bad["problems"][0]
+    assert bad["nodes"]["desktop"]["SerenMemory-wren"]["stash_verified"] is False
+
+
+def test_the_rehearse_route(tmp_path):
+    cfg = LodestarConfig()
+    cfg.backup = BackupConfig(dir=str(tmp_path / "stash"), every_hours=0)
+    with TestClient(create_app(cfg)) as c:
+        svc, agent, mem, loci = _world(tmp_path)
+        c.app.state.backup = BackupService(cfg.backup, svc._cluster, resolved_backup_dir(cfg))
+        c.post("/api/v1/backup/pull", json={})
+        r = c.post("/api/v1/backup/rehearse", json={"service": "SerenLoci-wren", "reason": "from the route"})
+        assert r.status_code == 200 and r.json()["ok"] and r.json()["rehearsed"] == 1, r.text
+        assert c.get("/api/v1/backup").json()["last_rehearsal"]["reason"] == "from the route"
+        assert c.post("/api/v1/backup/restore").status_code in (404, 405), "a rehearsal is not a restore"

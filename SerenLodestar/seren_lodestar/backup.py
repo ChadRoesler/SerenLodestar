@@ -27,6 +27,14 @@ STASH LAYOUT        <backup.dir>/<node>/<service>/<snapshot id>/...
                     services keep (newest keep_daily, then one a week), per
                     node and service.
 
+A REHEARSAL (Design note: "backups are useless if you can't validate
+them") is the stash proved: a stashed snapshot is verified here, sent down
+through the node's Observatory to the service it came from
+(POST .../service/{svc}/stores/rehearse), and the service restores it into a
+scratch folder, opens the copy as it opens its store, counts it against the
+manifest, replays its tombstones on the copy, and removes it. Nothing is
+restored. `rehearse()` reports per node and service.
+
 WHAT THIS IS NOT. Not a restore: nothing here writes a snapshot back into a
 service. That will be its own gated step, replaying the tombstones, asked for
 with a reason. Not a reach into the stash from a purge, either: a purge
@@ -42,7 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from seren_sinew.stores import StoreKeeper, unpack_snapshot
+from seren_sinew.stores import StoreKeeper, pack_snapshot, unpack_snapshot, verify_snapshot
 
 log = logging.getLogger("seren_lodestar.backup")
 
@@ -111,6 +119,7 @@ class BackupService:
         self._log = log_fn or (lambda m: log.info(m))
         self._lock = asyncio.Lock()
         self.last_pull: Optional[PullReport] = None
+        self.last_rehearsal: Optional[dict[str, Any]] = None
 
     # ── what is stashed ───────────────────────────────────────────────────
     def _keeper(self, node: str, service: str) -> StoreKeeper:
@@ -138,7 +147,8 @@ class BackupService:
                 "keep_daily": self._cfg.keep_daily, "keep_weekly": self._cfg.keep_weekly,
                 "nodes": {n: {s: {"count": len(rows), "latest": rows[0]} for s, rows in svcs.items()}
                           for n, svcs in stash.items()},
-                "newest_at": newest, "last_pull": self.last_pull.as_dict() if self.last_pull else None}
+                "newest_at": newest, "last_pull": self.last_pull.as_dict() if self.last_pull else None,
+                "last_rehearsal": self.last_rehearsal}
 
     def due(self, now: Optional[float] = None) -> bool:
         if self._cfg.every_hours <= 0:
@@ -228,6 +238,62 @@ class BackupService:
         pruned = keeper.prune() if got else []
         return {"stashed": got, "already_had": len(have), "remote": len(remote), "failed": failed, "pruned": pruned,
                 "took_fresh": take}
+
+
+    # ── the rehearsal ─────────────────────────────────────────────────────
+    async def rehearse(self, node: Optional[str] = None, service: Optional[str] = None,
+                       snapshot_id: Optional[str] = None, reason: str = "by hand") -> dict[str, Any]:
+        """Prove the stash: for every stashed service (or one node, one
+        service), verify a stashed snapshot here (the newest, or snapshot_id)
+        and send it down to the service for a restore's dry run. Never
+        raises; "ok" is true when every rehearsal that was asked for passed,
+        and at least one ran."""
+        t0 = time.time()
+        out: dict[str, Any] = {"ok": False, "dry_run": True, "reason": reason, "started_at": t0, "nodes": {},
+                               "rehearsed": 0, "passed": 0, "problems": []}
+        stash = self.stashed()
+        snaps = self._cluster.get_snapshots()
+        for node_name, svcs in stash.items():
+            if node and node_name != node:
+                continue
+            for svc, rows in svcs.items():
+                if service and svc != service:
+                    continue
+                row = next((r for r in rows if not snapshot_id or r["id"] == snapshot_id), None)
+                where = out["nodes"].setdefault(node_name, {})
+                if row is None:
+                    where[svc] = {"ok": False, "problems": [f"no stashed snapshot '{snapshot_id}'"]}
+                elif not getattr(snaps.get(node_name), "online", False) or self._cluster.get_agent(node_name) is None:
+                    where[svc] = {"ok": False, "snapshot": row["id"], "problems": ["the node is offline"]}
+                else:
+                    try:
+                        where[svc] = await self._rehearse_one(self._cluster.get_agent(node_name), svc, Path(row["path"]))
+                    except Exception as e:  # noqa: BLE001 - one service's trouble is one line in the report
+                        where[svc] = {"ok": False, "snapshot": row["id"], "problems": [f"{type(e).__name__}: {e}"]}
+                out["rehearsed"] += 1
+                if where[svc].get("ok"):
+                    out["passed"] += 1
+                else:
+                    out["problems"] += [f"{node_name}/{svc}: {p}" for p in (where[svc].get("problems") or ["failed"])]
+        if not out["rehearsed"]:
+            out["problems"].append("nothing stashed matches: pull first (POST /api/v1/backup/pull)")
+        out["ok"] = bool(out["rehearsed"]) and out["passed"] == out["rehearsed"]
+        out["seconds"] = round(time.time() - t0, 2)
+        self.last_rehearsal = out
+        self._log(f"rehearsal ({reason}): {out['passed']}/{out['rehearsed']} passed")
+        return out
+
+    async def _rehearse_one(self, agent: Any, svc: str, snap: Path) -> dict[str, Any]:
+        bad = await asyncio.to_thread(verify_snapshot, snap)
+        if bad:
+            return {"ok": False, "snapshot": snap.name, "stash_verified": False,
+                    "problems": ["the stashed copy no longer matches its manifest: " + "; ".join(bad[:5])]}
+        data = await asyncio.to_thread(pack_snapshot, snap)
+        rep = await agent.rehearse_service_archive_async(svc, data)
+        rep = dict(rep or {"ok": False, "problems": ["the service gave no report"]})
+        rep.setdefault("snapshot", snap.name)
+        rep["stash_verified"], rep["sent_bytes"] = True, len(data)
+        return rep
 
 
 async def pull_loop(service: BackupService, check_seconds: float = 900.0, first_after: float = 120.0) -> None:
