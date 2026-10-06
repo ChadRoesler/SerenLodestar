@@ -3,10 +3,25 @@ Service routes — /api/v1/service/{name}/* lifecycle verbs.
 
 Coordinates service lifecycle (start, stop, restart, status, health) across
 the cluster nodes.
+
+ENSURE / RELEASE (seren_sinew.orchestration; Design note:):
+
+    POST /api/v1/service/{service}/ensure     "I need this up" - Lodestar picks
+         the node, the node's Observatory starts the service and waits until
+         it answers, and the reply says READY and where to send requests.
+    POST /api/v1/service/{service}/release    "I am done" - the service is
+         stopped when its last holder lets go, if an ensure is what started it.
+    GET  /api/v1/cluster/leases               who holds what
+
+    hippocampus => Lodestar => Observatory => start llama => the Observatory
+    waits until llama is up => Lodestar => the hippocampus does its work.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+import ipaddress
+from urllib.parse import urlsplit
+
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 
 from ..cluster import JetsonClusterClient
@@ -59,6 +74,88 @@ def _resolve_per_node_agent(cluster, node: str, svc: str):
             status_code=404,
         )
     return agent, None
+
+
+# ── Ensure / release: a service is up while someone holds it ─────────────
+
+def _leases(request: Request):
+    from seren_sinew.orchestration import Leases
+    book = getattr(request.app.state, "leases", None)
+    if book is None:
+        book = request.app.state.leases = Leases()
+    return book
+
+
+def _service_base_url(agent, port: int, request: Request) -> str:
+    """Where a caller reaches a service on this node: the host Lodestar
+    reaches the node's Observatory on, and the service's own port. A node
+    configured by loopback is this box, and a caller on another box cannot
+    use 127.0.0.1 - so it gets the host IT reached Lodestar on."""
+    host = urlsplit(agent.base_url).hostname or ""
+    try:
+        loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = False
+    if loopback:
+        host = request.url.hostname or host
+    return f"http://{host}:{port}" if host and port else ""
+
+
+@router.post(f"/api/{API_VERSION}/service/{{service}}/ensure")
+async def service_ensure(request: Request, service: str, body: dict = Body(default={})):
+    from seren_sinew.orchestration import EnsureRequest, EnsureResult
+    cluster: JetsonClusterClient = request.app.state.cluster
+    req = EnsureRequest.from_dict(body)
+    holder = req.holder or "anonymous"
+    book = _leases(request)
+    # A holder that already has it somewhere is asked about on THAT node.
+    node_name = req.node or book.node_of(service, holder)
+    if node_name:
+        agent = cluster.get_agent(node_name)
+        if agent is None:
+            return EnsureResult.failed(service, f"'{node_name}' is not in the cluster config", node_name).to_dict()
+    else:
+        node = cluster.choose_node_for(service)
+        agent = cluster.get_agent(node.name) if node is not None else None
+        if agent is None:
+            return EnsureResult.failed(service, f"no online node has '{service}' installed").to_dict()
+    out = await agent.ensure_service_async(service, req)
+    if out.ok and out.ready:
+        out.base_url = _service_base_url(agent, out.port, request)
+        out.holders = book.acquire(agent.node_name, service, holder, started=out.started)
+    else:
+        cluster.mark_node_suspect(agent.node_name, f"ensure '{service}' failed: {out.error}") \
+            if "did not answer in time" in (out.error or "") else None
+    return out.to_dict()
+
+
+@router.post(f"/api/{API_VERSION}/service/{{service}}/release")
+async def service_release(request: Request, service: str, body: dict = Body(default={})):
+    from seren_sinew.orchestration import ReleaseRequest, ReleaseResult
+    cluster: JetsonClusterClient = request.app.state.cluster
+    req = ReleaseRequest.from_dict(body)
+    holder = req.holder or "anonymous"
+    book = _leases(request)
+    node_name = req.node or book.node_of(service, holder)
+    if not node_name:
+        return ReleaseResult(ok=True, service=service).to_dict()        # nothing held: nothing to do
+    left, should_stop = book.release(node_name, service, holder)
+    out = ReleaseResult(ok=True, service=service, node=node_name, holders=left)
+    if should_stop:
+        agent = cluster.get_agent(node_name)
+        r = await agent.stop_service_async(service) if agent is not None else None
+        if r is None or not getattr(r, "ok", False):
+            out.ok = False
+            out.error = (f"the last holder let go and '{service}' on '{node_name}' could not be stopped: "
+                         f"{getattr(r, 'error', None) or getattr(r, 'stderr', None) or 'the node did not answer'}")
+        else:
+            out.stopped = True
+    return out.to_dict()
+
+
+@router.get(f"/api/{API_VERSION}/cluster/leases")
+async def cluster_leases(request: Request):
+    return {"ok": True, "leases": _leases(request).snapshot()}
 
 
 # ── Cluster-routed service endpoints ─────────────────────────────────────

@@ -218,6 +218,35 @@ class JetsonAgentClient:
         path = f"api/v1/service/{quote(service, safe='')}/start"
         return await self._post_json(path, None, ServiceLifecycleResponse)
 
+    async def ensure_service_async(self, service: str, request: Any) -> Any:
+        """Ask the node to make the service READY (start it if it is down and
+        wait for its health check): seren_sinew.orchestration, the
+        Observatory's POST /service/{name}/ensure. Returns an EnsureResult,
+        never None - a node that could not be asked is ok False with the
+        reason. The timeout follows the wait that was asked for."""
+        from seren_sinew.orchestration import EnsureResult
+        path = f"api/v1/service/{quote(service, safe='')}/ensure"
+        try:
+            resp = await self._client.post(path, json=request.to_dict(),
+                                           timeout=float(request.wait_seconds) + 45.0)
+            if resp.status_code == 404:
+                return EnsureResult.failed(service, f"'{self._node_name}' has no service named '{service}' "
+                                                    "(or its Observatory predates ensure)", self._node_name)
+            if not resp.is_success:
+                self._log(f"POST {path} -> HTTP {resp.status_code}")
+                return EnsureResult.failed(service, f"the Observatory on '{self._node_name}' answered "
+                                                    f"{resp.status_code}", self._node_name)
+            out = EnsureResult.from_dict(resp.json())
+            out.node = self._node_name                # the name Lodestar knows it by
+            return out
+        except httpx.TimeoutException:
+            self._log(f"POST {path} -> timeout")
+            return EnsureResult.failed(service, f"the Observatory on '{self._node_name}' did not answer in time",
+                                       self._node_name)
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"POST {path} -> {type(ex).__name__}: {ex}")
+            return EnsureResult.failed(service, f"{type(ex).__name__}: {ex}", self._node_name)
+
     async def stop_service_async(
         self, service: str
     ) -> Optional[ServiceLifecycleResponse]:
