@@ -68,6 +68,45 @@ def test_the_observatorys_refusal_comes_back_as_it_is(monkeypatch):
     assert r.status_code == 409 and "not logged on" in r.json()["error"]
 
 
+def test_the_model_can_be_woken_by_a_tool_and_so_by_the_scheduler(monkeypatch):
+    """Design note: 'if you wanna set aside some time every day to write
+    in margin or whatever you can pop a schedule to wake you to do that.' The
+    scheduler fires TOOLS, so waking the model is a tool: wake_model sends a
+    ripple down the same road the hippocampus uses."""
+    import asyncio
+    agent = FakeAgent()
+    with TestClient(_app(RippleConfig(target="desktop"))) as c:
+        monkeypatch.setattr(c.app.state.cluster, "get_agent", lambda n: agent if n == "desktop" else None)
+        tools = c.app.state.tool_client
+        names = {t.name for t in asyncio.run(tools.list_tools_async())}
+        assert {"wake_model", "scheduler_add", "scheduler_list", "scheduler_remove"} <= names
+        # the way the scheduler fires it: by name, through the tool client
+        out = json.loads(asyncio.run(tools.call_tool_async(
+            "wake_model", {"message": "It is nine. This is the time you set aside to write in your margin."})))
+        assert out["ok"] is True and out["routed_to"] == "desktop", out
+        assert agent.seen == [{"event": "scheduled",
+                               "message": "It is nine. This is the time you set aside to write in your margin."}]
+        # no message: nobody is woken to nothing
+        out = json.loads(asyncio.run(tools.call_tool_async("wake_model", {"message": "  "})))
+        assert out["ok"] is False and "a message is required" in out["error"] and len(agent.seen) == 1
+        # and it can be put on the schedule
+        added = json.loads(asyncio.run(tools.call_tool_async("scheduler_add", {
+            "name": "evening margin", "tool_name": "wake_model", "schedule_type": "cron",
+            "cron_expression": "0 21 * * *", "tool_args_json": json.dumps({"message": "margin time"})})))
+        assert added.get("ok") is True, added
+        listed = json.loads(asyncio.run(tools.call_tool_async("scheduler_list", {})))
+        assert any(t.get("name") == "evening margin" and t.get("tool_name") == "wake_model"
+                   for t in listed.get("tasks", [])), listed
+        asyncio.run(tools.call_tool_async("scheduler_remove", {"name": "evening margin"}))
+
+
+def test_waking_says_so_when_this_lodestar_routes_no_ripples():
+    import asyncio
+    with TestClient(_app(RippleConfig())) as c:
+        out = json.loads(asyncio.run(c.app.state.tool_client.call_tool_async("wake_model", {"message": "hello"})))
+    assert out["ok"] is False and out["status"] == 409 and "does not route ripples" in out["error"]
+
+
 def test_an_unknown_node_is_named():
     with TestClient(_app(RippleConfig(target="ghost"))) as c:
         r = c.post("/api/v1/system/ripple", json=BODY)

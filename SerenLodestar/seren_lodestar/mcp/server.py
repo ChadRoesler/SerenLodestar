@@ -151,6 +151,38 @@ def mount_mcp_routes(app: FastAPI) -> Any:
         }
 
     @mcp_server.tool()
+    async def wake_model(message: str, event: str = "scheduled") -> dict:
+        """Wake the main model with a message - a new session that starts
+        from these words, on the box where the model lives.
+
+        MADE TO BE SCHEDULED. On its own it is a way to leave yourself a note
+        that arrives as a wake-up; with scheduler_add it is time you set
+        aside: "write in the margin every evening", "look at the drafts on
+        Sunday". For example:
+
+            scheduler_add(name="evening margin", tool_name="wake_model",
+                          schedule_type="cron", cron_expression="0 21 * * *",
+                          tool_args_json='{"message": "It is nine. This is the
+                          time you set aside to write in your margin."}')
+
+        Cron times are UTC. Write the message to whoever wakes up: they start
+        cold and have only what it says. Goes where this Lodestar routes
+        ripples (ripple.target); if that is not set, it says so and wakes
+        nobody. The command that runs is the configured one - this tool
+        supplies the message and nothing else.
+
+        Args:
+            message: What the woken session is told. Required.
+            event: A short label for the logs (default "scheduled").
+        """
+        text = (message or "").strip()
+        if not text:
+            return {"ok": False, "error": "a message is required: it is all the woken session has to go on"}
+        from ..routes.system import route_ripple
+        status, answer = await route_ripple(app, {"event": (event or "scheduled").strip()[:60], "message": text[:4000]})
+        return {**answer, "status": status, "ok": bool(answer.get("ok")) and status < 400}
+
+    @mcp_server.tool()
     async def scheduler_add(
         name: str,
         tool_name: str,
