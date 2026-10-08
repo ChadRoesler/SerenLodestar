@@ -1,7 +1,7 @@
 """
 Lodestar pulls every node's services' snapshots and stashes them
-(seren_lodestar.backup). Design note: Lodestar does "the requesting of
-them, and pulling them, and stashing them."
+(seren_lodestar.backup): Lodestar does the requesting, the pulling and the
+stashing.
 
 The node here is a fake Observatory client backed by REAL Sinew keepers, so
 what travels is a real archive and what is kept is verified by its manifest.
@@ -189,7 +189,7 @@ def test_off_says_so_and_the_default_place_is_beside_the_config(tmp_path):
 
 
 def test_a_rehearsal_proves_the_stash_on_the_node_it_came_from(tmp_path):
-    """Design note: 'backups are useless if you can't validate them'.
+    """Backups are useless if you cannot validate them.
     The stashed snapshot goes back down to the service for a dry run."""
     svc, agent, mem, loci = _world(tmp_path)
     mem.check = lambda restored, man, snap: {"read": (restored["it"] / "seren-memory.json").read_text()}

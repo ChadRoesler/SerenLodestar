@@ -213,7 +213,7 @@ class RippleConfig:
     /api/v1/system/ripple). A ripple is the hippocampus reaching the main
     model - a brief at bedtime, a review when drafts wait. Lodestar knows the
     cluster, so the hippocampus needs one address and one token, and moving
-    the model is a change here, not a hunt for tokens (Design note:).
+    the model is a change here, not a hunt for tokens.
 
     target:
       ""        - off: this Lodestar does not route ripples (409)

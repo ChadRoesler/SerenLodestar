@@ -1,7 +1,7 @@
 """
 Lodestar's ensure / release (seren_sinew.orchestration).
 
-Design note: hippocampus => Lodestar => Observatory => start llama => the
+The chain: hippocampus => Lodestar => Observatory => start llama => the
 Observatory waits until llama is up => Lodestar tells the hippocampus it is
 ready. Pinned here, Lodestar's link:
 

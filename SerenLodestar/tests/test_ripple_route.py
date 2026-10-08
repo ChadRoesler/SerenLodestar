@@ -69,8 +69,8 @@ def test_the_observatorys_refusal_comes_back_as_it_is(monkeypatch):
 
 
 def test_the_model_can_be_woken_by_a_tool_and_so_by_the_scheduler(monkeypatch):
-    """Design note: 'if you wanna set aside some time every day to write
-    in margin or whatever you can pop a schedule to wake you to do that.' The
+    """A model that wants time every day to write in its margin can put its
+    own waking on a schedule. The
     scheduler fires TOOLS, so waking the model is a tool: wake_model sends a
     ripple down the same road the hippocampus uses."""
     import asyncio

@@ -4,7 +4,7 @@ Service routes — /api/v1/service/{name}/* lifecycle verbs.
 Coordinates service lifecycle (start, stop, restart, status, health) across
 the cluster nodes.
 
-ENSURE / RELEASE (seren_sinew.orchestration; Design note:):
+ENSURE / RELEASE (seren_sinew.orchestration):
 
     POST /api/v1/service/{service}/ensure     "I need this up" - Lodestar picks
          the node, the node's Observatory starts the service and waits until

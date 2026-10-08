@@ -7,9 +7,8 @@ Lodestar's half of the brain's backups: ask, pull, stash.
 Every service that keeps something declares it and snapshots itself
 (seren_sinew.stores: GET /stores, POST /stores/snapshot); its node's
 Observatory proxies those routes, so Lodestar needs one address and one token
-per node. Design note: "SerenSinew handles the backups... this gives us
-a way to manage and eventually be able to have Lodestar do the requesting of
-them, and pulling them, and stashing them."
+per node. Sinew handles the backups; this gives Lodestar a way to manage
+them: to request them, pull them and stash them.
 
 A PULL, per node that is online, per service the node reports installed:
 
@@ -27,8 +26,8 @@ STASH LAYOUT        <backup.dir>/<node>/<service>/<snapshot id>/...
                     services keep (newest keep_daily, then one a week), per
                     node and service.
 
-A REHEARSAL (Design note: "backups are useless if you can't validate
-them") is the stash proved: a stashed snapshot is verified here, sent down
+A REHEARSAL (backups are useless if you cannot validate them) is the stash
+proved: a stashed snapshot is verified here, sent down
 through the node's Observatory to the service it came from
 (POST .../service/{svc}/stores/rehearse), and the service restores it into a
 scratch folder, opens the copy as it opens its store, counts it against the
@@ -39,7 +38,7 @@ WHAT THIS IS NOT. Not a restore: nothing here writes a snapshot back into a
 service. That will be its own gated step, replaying the tombstones, asked for
 with a reason. Not a reach into the stash from a purge, either: a purge
 leaves a tombstone, and a restore applies the tombstones; the stash is not
-pruned by it (decided with Design note:).
+pruned by it.
 """
 from __future__ import annotations
 
