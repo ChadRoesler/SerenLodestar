@@ -41,8 +41,8 @@ dependencies = [
     # seren_meninges.updates, which the [updates] extra below imports. <3
     # because a MAJOR here is an un-defaultable security change, and that is
     # the only thing that should ever force a bump.
-    "seren-meninges>=2.4.0,<3",
-    "seren-sinew>=1.11.0,<2",  # 1.11.0: seren_sinew.orchestration (ensure / release)
+    "seren-meninges>=2.4.0,<6",
+    "seren-sinew>=1.11.0,<6",  # 1.11.0: seren_sinew.orchestration (ensure / release)
 ]
 
 [project.optional-dependencies]
