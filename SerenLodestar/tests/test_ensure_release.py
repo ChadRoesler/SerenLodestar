@@ -77,8 +77,10 @@ def test_ensure_answers_ready_with_the_address_and_release_stops_it():
         assert d["ok"] and d["ready"] and d["started"] and d["node"] == "node-a", d
         assert d["base_url"] == "http://192.0.2.101:8090" and d["holders"] == ["seren-hippocampus"]
         assert nano.ensures == [("llama", "seren-hippocampus", "a sleep", 120.0)]
-        assert c.get("/api/v1/cluster/leases").json()["leases"] == [
+        rows = c.get("/api/v1/cluster/leases").json()["leases"]
+        assert [{k: r[k] for k in ("node", "service", "holders", "started_by_lease")} for r in rows] == [
             {"node": "node-a", "service": "llama", "holders": ["seren-hippocampus"], "started_by_lease": True}]
+        assert 0 < rows[0]["expires_in"]["seren-hippocampus"] <= 3600, "a lease has a clock"
 
         # a second holder shares it; the first letting go does not stop it
         d2 = c.post("/api/v1/service/llama/ensure", json={"holder": "symposium"}).json()

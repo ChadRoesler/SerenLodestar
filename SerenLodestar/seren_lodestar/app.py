@@ -61,6 +61,7 @@ from .routes import scheduler as scheduler_routes
 from .routes import chat as chat_routes
 from .routes import agent_update as agent_update_routes
 from .routes import backup as backup_routes
+from .routes import upgrade as upgrade_routes
 
 from seren_meninges import get_version
 from seren_meninges.updates import updates_payload
@@ -209,6 +210,26 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
             log.info(f"backups: stash at {app.state.backup.root}"
                      + (f", a pull every {cfg.backup.every_hours:g}h" if cfg.backup.every_hours > 0 else ", pulls on request"))
 
+        # Running the main apps as needed (seren_lodestar.run_as_needed; the
+        # rules are Sinew's). The lease book is kept beside the config.
+        from .run_as_needed import Steward, resolved_state_file
+        oc = cfg.orchestration
+        app.state.steward = Steward(lambda: app.state.cluster, oc.policies, resolved_state_file(cfg),
+                                    lease_ttl_seconds=oc.lease_ttl_minutes * 60.0, check_seconds=oc.check_seconds,
+                                    log_fn=lambda m: log.info(f"[orchestration] {m}"))
+        _steward_task = asyncio.ensure_future(app.state.steward.loop()) if oc.enabled else None
+
+        # Upgrades: Lodestar drives them, each node's Observatory does them
+        # (seren_lodestar.upgrade). A run this Lodestar handed off - its own
+        # upgrade - is followed to its end and closed by the one that starts.
+        from .upgrade import IndexLatest, UpgradeService, runs_dir
+        app.state.upgrades = UpgradeService(cluster, app.state.backup, runs_dir(cfg.config_path),
+                                            latest=IndexLatest(cfg.updates.index_url,
+                                                               cfg.updates.check_interval_hours * 3600.0,
+                                                               cfg.updates.allow_prerelease, cfg.updates.enabled),
+                                            log_fn=lambda m: log.info(f"[upgrade] {m}"))
+        _resume_task = asyncio.ensure_future(app.state.upgrades.resume())
+
         # Start services
         asyncio.ensure_future(discovery.start())
         log.info("discovery service started")
@@ -227,6 +248,9 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
         # Shutdown
         if _pull_task is not None:
             _pull_task.cancel()
+        _resume_task.cancel()
+        if _steward_task is not None:
+            _steward_task.cancel()
         await cluster.aclose()
         if scheduler:
             await scheduler.stop()
@@ -295,6 +319,7 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
     app.include_router(services_routes.router)
     app.include_router(scheduler_routes.router)
     app.include_router(backup_routes.router)
+    app.include_router(upgrade_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(agent_update_routes.router)
 

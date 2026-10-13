@@ -111,6 +111,14 @@ to a `scheduler/` directory next to your config file (or
 restart; one-shots delete themselves after firing, recurring ones re-arm. A
 task fires through the same tool client the chat uses.
 
+**Upgrades are driven, not hoped for.** Release what changed to PyPI, and
+`POST /api/v1/upgrade` moves whatever is behind: every online node's seren
+services — stores first, then what reads them, the Observatory last on its
+node, Lodestar last of all — each to its own newest release. For each one it
+pulls a fresh snapshot into the backup stash, then asks the node's
+Observatory to upgrade it (see [Upgrades](#upgrades)). The apps move apart:
+one that fails is rolled back and the rest carry on.
+
 **Agent updates push outward.** `POST /api/v1/system/agent-update` ships a
 packaged Observatory to every node at its configured `agent_update_path`.
 
@@ -166,6 +174,15 @@ network stops being trusted.
 | `POST /api/v1/system/reboot/{node}/cancel` | change your mind |
 | `POST /api/v1/system/agent-update` | push Observatory to every node |
 | `POST /api/v1/node/{node}/agent-update` | push Observatory to one node |
+| `POST /api/v1/service/{name}/ensure` | hold an app (or llama…) up; a short name finds its install |
+| `POST /api/v1/service/{name}/release` | let go; its run policy decides when it stops |
+| `GET /api/v1/cluster/leases` | who holds what, for how long |
+| `GET /api/v1/orchestration` | run policies, leases, apps, what was started and stopped |
+| `POST /api/v1/orchestration/check` | apply the run policies now |
+| `POST /api/v1/upgrade` | upgrade the cluster's seren services (`dry_run: true` for the plan) |
+| `GET /api/v1/upgrade` | the run going now, and the recent ones |
+| `GET /api/v1/upgrade/behind` | every seren service, its version, and the newest on the index |
+| `GET /api/v1/upgrade/{run_id}` | one run, step by step |
 | `POST /api/v1/cluster/refresh` | re-probe all nodes |
 | `POST /api/v1/cluster/refresh/{node}` | re-probe one |
 | `GET /api/v1/cluster/capabilities` | the capability map |
@@ -245,16 +262,103 @@ Note `/` is public, so this publishes "running 1.4.2, which is behind" to anyone
 who asks. It already published the version; this adds the comparison. Set
 `enabled: false` if that bothers you and read it off the dashboard instead.
 
-**Lodestar never upgrades itself.** Applying an update is `pip install -U
-seren-lodestar` and a restart — your service supervisor's job, not this
-process's. A running process can't reliably swap its own code out from under
-itself, so it doesn't pretend to.
+**Lodestar never swaps its own code in place.** A running process can't
+reliably replace itself, so it doesn't pretend to. What it does instead is
+hand the job to its node's Observatory and pick the result up after the
+restart; see [Upgrades](#upgrades).
 
 ---
 
+## Running apps as needed
+
+Not every Seren app needs to be up all the time. The `orchestration:` block
+gives each app a run policy (`unmanaged`, `always`, `on_demand`, `scheduled`;
+the rules are `seren_sinew.orchestration`), and every `check_seconds` Lodestar
+applies them through each node's Observatory: an `on_demand` app nobody has
+held for its `idle_minutes` is stopped, a `scheduled` one is started inside its
+hours. An app is held by an ensure (`POST /api/v1/service/probe/ensure` — a
+short name finds the one install of it) for `lease_ttl_minutes` unless it is
+renewed, so a caller that dies lets go on its own. Callers that go through
+Sinew's `OnDemandTransport` ensure on a refused connection and renew while
+they keep calling. The lease book is kept beside the config, so a restart
+doesn't forget what an ensure started. `GET /api/v1/orchestration` shows the
+policies, the leases, every app and what was started and stopped lately;
+`POST /api/v1/orchestration/check` applies the policies now. The default
+policy is the old behaviour exactly. Lodestar and the Observatory are never
+managed.
+
+## Upgrades
+
+Snap it, snap the config, upgrade, put it back — without remembering to.
+
+```bash
+# What is behind (cached; ?refresh=true asks the index now):
+curl -H "Authorization: Bearer $TOKEN" localhost:6361/api/v1/upgrade/behind
+# What would move, changing nothing:
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:6361/api/v1/upgrade   -d '{"dry_run": true}'
+# Do it (all online nodes, every seren service that is behind; or name "nodes" / "services"):
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:6361/api/v1/upgrade   -d '{"reason": "memory 5.2"}'
+# Pin an app (or a run of one app takes "version"):
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:6361/api/v1/upgrade   -d '{"versions": {"memory": "5.2.0"}}'
+curl -H "Authorization: Bearer $TOKEN" localhost:6361/api/v1/upgrade
+```
+
+**Each app on its own.** The Seren apps are installed, versioned and released
+apart: tag and publish the one that changed, and a run moves it (and leaves
+what is already on its newest alone — `"only_behind": false` reinstalls
+anyway). A run never puts one version on every app: `version` is for a run of
+one app, `versions` pins per app, and anything else goes to its own newest.
+
+**Peers.** Where the apps meet is over HTTP — the Callosum reads Memory and
+Loci, the Hippocampus writes to Memory — so that contract is what's checked,
+not the packages. A reader lists the apps it talks to in its pyproject, as an
+extra nobody installs:
+
+```toml
+[project.optional-dependencies]
+peers = ["seren-memory>=5.2", "seren-loci>=5.0"]
+```
+
+meaning "where there is a Memory, it is 5.2 or newer". An app that isn't in
+the cluster isn't required, so you can still pick and choose. Lodestar sends
+every node's versions with each upgrade; when the new version needs a newer
+peer than the cluster runs, the Observatory ends the job **held**, nothing
+touched, with the reason (`seren-corpus-callosum 5.3.0 needs
+seren-memory>=5.2; seren-memory-wren on nuc is 5.1.0`). Stores go first in a
+run, so when Memory and the Callosum both move, the Callosum sees the new
+Memory. The stores' side of the deal: within a major version, only add. Raise
+a reader's floor in the same commit that starts using what the newer peer
+added.
+
+Per service, in order:
+
+0. **Behind?** An app already on the newest release is left alone
+   (`current`). A pinned version is always installed.
+1. **Backup.** A fresh snapshot is pulled into the stash (the `backup:` block)
+   so a copy is off the box before the box changes. If the pull fails, that
+   service is not touched, and the run goes on with the rest.
+2. **Upgrade.** The node's Observatory runs it as a job: the config and the
+   app folder's `.env` files are held, `pip install --upgrade` runs with the
+   service's extras *and* `seren-sinew` / `seren-meninges` named (so they move
+   to what the new pins allow, rather than staying put), the new version must
+   import before anything restarts, then restart, health, and the config put
+   back if anything changed it. Any failure there is rolled back on the node:
+   the old versions pinned back, the config restored, restarted.
+3. **Carry on.** A job that doesn't end `done` fails that app (it was rolled
+   back on its node) or holds it (a peer too old), and the run goes on. It
+   ends `done`, `partial` (something failed, something moved) or `failed`.
+   A service with no pip install the Observatory can see (llama, kokoro — the
+   node installer builds those) is skipped.
+
+Lodestar's own upgrade is last. It hands the job to its node's Observatory and
+records the hand-off; the Lodestar that comes up afterwards follows the job to
+its end and closes the run. Runs are kept as JSON in `upgrades/` beside the
+config. The MCP tools `upgrade_behind`, `upgrade_plan`, `upgrade_start` and
+`upgrade_status` do the same over MCP.
+
 ## What it won't do
 
-It won't upgrade itself (see above). It won't install services — that's the
+It won't swap its own code in place (see Upgrades). It won't install services — that's the
 Observatory's job on each node. It won't
 invent a node that isn't in the config; discovery probes what you listed, it
 doesn't scan your subnet. A `preferred_for` entry can't force work onto a box

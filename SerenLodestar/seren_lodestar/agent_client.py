@@ -151,6 +151,56 @@ class JetsonAgentClient:
             data = {"ok": resp.is_success, "answer": data}
         return resp.status_code, data
 
+    async def start_upgrade_async(self, service: str, body: dict[str, Any],
+                                  timeout: float = 900.0) -> tuple[int, dict[str, Any]]:
+        """Ask the node's Observatory to upgrade one service (or, with
+        dry_run, to say what it would do). Status and body come back as the
+        Observatory gave them: 202 with the job, 409 'not upgradable' or
+        'busy', each with its reason. The timeout covers a dry run, which is
+        pip resolving the whole tree."""
+        path = f"api/v1/service/{quote(service, safe='')}/upgrade"
+        try:
+            resp = await self._client.post(path, json=body, timeout=timeout)
+        except Exception as ex:  # noqa: BLE001
+            return 502, {"ok": False, "error": f"the node's Observatory did not answer: {type(ex).__name__}: {ex}"}
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"ok": resp.is_success, "error": resp.text[:400]}
+        if not isinstance(data, dict):
+            data = {"ok": resp.is_success, "answer": data}
+        return resp.status_code, data
+
+    async def set_orchestrated_async(self, service: str, flag: bool = True) -> bool:
+        """Mark a service as started on demand on its Observatory, so off
+        reads as idle there. True when the Observatory took it."""
+        path = f"api/v1/service/{quote(service, safe='')}/orchestrated"
+        try:
+            resp = await self._client.post(path, json={"orchestrated": bool(flag)}, timeout=15.0)
+            return resp.is_success
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"POST {path} -> {type(ex).__name__}: {ex}")
+            return False
+
+    async def get_upgrade_job_async(self, job_id: str) -> Optional[dict[str, Any]]:
+        """One upgrade job as the Observatory has it, or None (not found, or
+        the Observatory is not answering - it may be the thing restarting)."""
+        data = await self._get_json_raw(f"api/v1/upgrades/{quote(job_id, safe='')}")
+        return (data or {}).get("job") if isinstance(data, dict) else None
+
+    async def get_upgrade_versions_async(self) -> Optional[dict[str, Any]]:
+        """Every service on the node its Observatory can upgrade: {name:
+        {package, version, needs}}. None when the Observatory is older than
+        the route, or not answering. Slow-ish: it asks each venv."""
+        try:
+            resp = await self._client.get("api/v1/upgrades/versions", timeout=120.0)
+            data = resp.json() if resp.is_success else None
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"GET api/v1/upgrades/versions -> {type(ex).__name__}: {ex}")
+            return None
+        svcs = (data or {}).get("services") if isinstance(data, dict) else None
+        return svcs if isinstance(svcs, dict) else None
+
     async def reboot_cancel_async(self) -> Optional[RebootCancelResponse]:
         return await self._post_json(
             "api/v1/system/reboot/cancel", None, RebootCancelResponse

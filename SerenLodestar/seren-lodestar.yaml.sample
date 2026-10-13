@@ -109,9 +109,9 @@ chat:
 # ── Update checking ───────────────────────────────────────────────────
 #
 # Asks the package index whether a newer seren-lodestar exists and reports it
-# on GET /. Purely informational - Lodestar never upgrades itself. Applying an
-# update is `pip install -U seren-lodestar` plus a service restart, which is
-# your supervisor's job (NSSM, systemd), not this process's.
+# on GET /. Purely informational. Applying updates is POST /api/v1/upgrade
+# (each node's Observatory does it, Lodestar's own last, handed to its node's
+# Observatory) - see the README's Upgrades section.
 #
 # Checking is built in (seren-meninges carries it); `enabled: false` here
 # or SEREN_LODESTAR_UPDATES_ENABLED=0 switches it off for a box that must
@@ -121,3 +121,34 @@ updates:
   check_interval_hours: 6      # cached; never checked per-request
   allow_prerelease: false      # true would offer you 2.0.0rc1
   # index_url: "https://pypi.org/pypi/{distribution}/json"   # private index?
+
+# ── Running apps as needed ──────────────────────────────────────────────
+#
+# Which of the main Seren apps run all the time and which only when someone
+# needs them (the rules are seren_sinew.orchestration). An app is held by an
+# ensure (POST /api/v1/service/<app>/ensure, or a caller's OnDemandTransport)
+# for lease_ttl_minutes unless renewed; every check_seconds the policies are
+# applied through each node's Observatory.
+#
+#   unmanaged  the default: a release stops what an ensure started (after
+#              idle_minutes; 0 = at once), nothing else is touched
+#   always     never stopped
+#   on_demand  stopped after idle_minutes with nobody holding it
+#   scheduled  kept up inside hours (local time, may wrap midnight),
+#              on demand outside them
+#
+# Lodestar and the Observatory are never managed. Apps are named by their
+# short name (probe, corpus-callosum) or an install's full name. An app that
+# another app calls must be reachable when it is called: put an app on demand
+# only when its callers go through Sinew's OnDemandTransport, or nobody does.
+orchestration:
+  enabled: true
+  lease_ttl_minutes: 60
+  check_seconds: 60
+  # state_file: ""             # the lease book; default orchestration/leases.json beside this file
+  default: {mode: unmanaged, idle_minutes: 0}
+  apps: {}
+  #   probe:       {mode: on_demand, idle_minutes: 20}
+  #   theatre:     on_demand
+  #   hippocampus: {mode: scheduled, hours: "22:00-07:00", idle_minutes: 10}
+  #   memory:      always

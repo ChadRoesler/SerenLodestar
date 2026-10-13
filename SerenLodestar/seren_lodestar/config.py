@@ -301,6 +301,7 @@ class LodestarConfig:
     chat: ChatConfig = field(default_factory=ChatConfig)
     ripple: RippleConfig = field(default_factory=RippleConfig)
     backup: "BackupConfig" = field(default_factory=lambda: _backup_cfg())
+    orchestration: "OrchestrationConfig" = field(default_factory=lambda: _orchestration_cfg())
     #: The yaml this config was read from, or None when running on defaults.
     #: The scheduler keeps its state beside it (README: "next to your config
     #: file"). It used to be derived from the SEREN_LODESTAR_CONFIG env var
@@ -313,6 +314,12 @@ def _backup_cfg(d: Optional[dict[str, Any]] = None):
     # imported here: backup.py pulls in seren_sinew, which config must not need at import
     from .backup import BackupConfig
     return BackupConfig.from_dict(d)
+
+
+def _orchestration_cfg(d: Optional[dict[str, Any]] = None):
+    # imported here for the same reason: the policies are Sinew's
+    from .run_as_needed import OrchestrationConfig
+    return OrchestrationConfig.from_dict(d)
 
 
 def resolved_backup_dir(cfg: "LodestarConfig") -> Path:
@@ -426,6 +433,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     chat = ChatConfig.from_dict(data.get("chat"))
     ripple = RippleConfig.from_dict(data.get("ripple"))
     backup = _backup_cfg(data.get("backup"))
+    orchestration = _orchestration_cfg(data.get("orchestration"))
 
     cfg = LodestarConfig(
         server=server,
@@ -438,6 +446,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         chat=chat,
         ripple=ripple,
         backup=backup,
+        orchestration=orchestration,
         config_path=found_path,
     )
 

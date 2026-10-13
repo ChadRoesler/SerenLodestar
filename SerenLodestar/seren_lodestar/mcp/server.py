@@ -300,6 +300,80 @@ def mount_mcp_routes(app: FastAPI) -> Any:
         return await svc.rehearse(node=node, service=service, snapshot_id=snapshot_id, reason=reason)
 
     @mcp_server.tool()
+    async def orchestration_status() -> dict:
+        """Which apps run all the time and which as needed: every app's run
+        policy (unmanaged, always, on_demand, scheduled) and whether it is
+        running, who holds what and for how long, and what was started and
+        stopped lately."""
+        st = getattr(app.state, "steward", None)
+        if st is None:
+            return {"ok": False, "error": "orchestration is not available"}
+        return {"ok": True, **st.describe()}
+
+    @mcp_server.tool()
+    async def upgrade_plan(nodes: list[str] | None = None, services: list[str] | None = None,
+                           versions: dict[str, str] | None = None, only_behind: bool = True) -> dict:
+        """What an upgrade would do, changing nothing: each online node's
+        Observatory asks pip for its plan, per seren service (or the ones
+        named, by short name like 'memory' or full name), in the order a run
+        would take them. Each app goes to its own newest release unless
+        versions pins it ({"memory": "5.2.0"}); with only_behind (default)
+        the ones already on their newest are listed as current. 'held' lists
+        apps whose new version needs a newer peer (a Memory, a Loci) than the
+        cluster would run."""
+        svc = getattr(app.state, "upgrades", None)
+        if svc is None:
+            return {"ok": False, "error": "upgrades are not available"}
+        return await svc.plan(nodes=nodes, services=services, versions=versions, only_behind=only_behind)
+
+    @mcp_server.tool()
+    async def upgrade_behind(nodes: list[str] | None = None, services: list[str] | None = None,
+                             refresh: bool = False) -> dict:
+        """Which seren apps have a newer release than they run: every seren
+        service an Observatory can upgrade, its version, and the newest the
+        index has (cached; refresh asks now). 'behind' is what an upgrade run
+        would move."""
+        svc = getattr(app.state, "upgrades", None)
+        if svc is None:
+            return {"ok": False, "error": "upgrades are not available"}
+        return await svc.behind(nodes=nodes, services=services, refresh=refresh)
+
+    @mcp_server.tool()
+    async def upgrade_start(nodes: list[str] | None = None, services: list[str] | None = None,
+                            versions: dict[str, str] | None = None, only_behind: bool = True,
+                            reason: str = "asked over MCP") -> dict:
+        """Start an upgrade run and return at once with its id. Each app on
+        its own: to its newest release, or the version pinned in versions
+        ({"memory": "5.2.0"}); with only_behind (default) the ones already on
+        their newest are left alone. Per service, in order (stores first, the
+        Observatory last on each node, Lodestar last of all): a fresh
+        snapshot pulled into the stash, then the node's Observatory checks
+        the apps it talks to are new enough (else 'held', untouched),
+        snapshots the config, upgrades with pip (moving seren-sinew and
+        seren-meninges too), checks it imports, restarts it, waits for health
+        and puts the config back. One failing is rolled back there and the
+        run goes on with the rest. Follow it with upgrade_status."""
+        svc = getattr(app.state, "upgrades", None)
+        if svc is None:
+            return {"ok": False, "error": "upgrades are not available"}
+        _status, out = svc.start(nodes=nodes, services=services, versions=versions, only_behind=only_behind,
+                                 reason=reason)
+        return out
+
+    @mcp_server.tool()
+    async def upgrade_status(run_id: str | None = None) -> dict:
+        """One upgrade run (run_id), or the one going now and the recent ones:
+        every node/service step, its state (done, current, held, skipped,
+        failed), its job, versions before and after, and what failed."""
+        svc = getattr(app.state, "upgrades", None)
+        if svc is None:
+            return {"ok": False, "error": "upgrades are not available"}
+        if run_id:
+            run = svc.load(run_id)
+            return {"ok": run is not None, "run": run} if run else {"ok": False, "error": f"no run {run_id}"}
+        return {"ok": True, **svc.describe()}
+
+    @mcp_server.tool()
     async def cluster_capabilities() -> dict:
         """Return the capability map — which services are on which nodes."""
         cluster = getattr(app.state, "cluster", None)

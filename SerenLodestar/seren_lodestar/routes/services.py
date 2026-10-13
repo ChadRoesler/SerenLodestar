@@ -10,8 +10,14 @@ ENSURE / RELEASE (seren_sinew.orchestration):
          the node, the node's Observatory starts the service and waits until
          it answers, and the reply says READY and where to send requests.
     POST /api/v1/service/{service}/release    "I am done" - the service is
-         stopped when its last holder lets go, if an ensure is what started it.
+         stopped when its last holder lets go, if an ensure is what started it
+         (or, for an app with a run policy, when the policy says).
     GET  /api/v1/cluster/leases               who holds what
+    GET  /api/v1/orchestration                policies, leases, apps, what was done
+    POST /api/v1/orchestration/check          apply the policies now
+
+    A short name ('probe') ensures the one install of it; see
+    seren_lodestar.run_as_needed for the policies.
 
     hippocampus => Lodestar => Observatory => start llama => the Observatory
     waits until llama is up => Lodestar => the hippocampus does its work.
@@ -78,12 +84,30 @@ def _resolve_per_node_agent(cluster, node: str, svc: str):
 
 # ── Ensure / release: a service is up while someone holds it ─────────────
 
+def _steward(request: Request):
+    """The lease book and the run policies (seren_lodestar.run_as_needed). An
+    app built without one (a test, a bare FastAPI) gets the default: an
+    in-memory book, unmanaged."""
+    from seren_sinew.orchestration import Policies
+    from ..run_as_needed import Steward
+    st = getattr(request.app.state, "steward", None)
+    if st is None:
+        st = request.app.state.steward = Steward(lambda: request.app.state.cluster, Policies())
+    return st
+
+
 def _leases(request: Request):
-    from seren_sinew.orchestration import Leases
-    book = getattr(request.app.state, "leases", None)
-    if book is None:
-        book = request.app.state.leases = Leases()
-    return book
+    return _steward(request).leases
+
+
+def _resolve_name(request: Request, cluster, service: str) -> tuple[str, str]:
+    """(service, error). A name some node has is itself. Otherwise a short
+    name ('probe') is the one install of it - two installs is a question
+    back, not a guess."""
+    if cluster.choose_node_for(service) is not None or not hasattr(cluster, "get_capabilities"):
+        return service, ""
+    name, err = _steward(request).resolve(service)
+    return (name or service), (err or "")
 
 
 def _service_base_url(agent, port: int, request: Request) -> str:
@@ -107,7 +131,12 @@ async def service_ensure(request: Request, service: str, body: dict = Body(defau
     cluster: JetsonClusterClient = request.app.state.cluster
     req = EnsureRequest.from_dict(body)
     holder = req.holder or "anonymous"
-    book = _leases(request)
+    steward = _steward(request)
+    book = steward.leases
+    if not req.node:
+        service, err = _resolve_name(request, cluster, service)
+        if err:
+            return EnsureResult.failed(service, err).to_dict()
     # A holder that already has it somewhere is asked about on THAT node.
     node_name = req.node or book.node_of(service, holder)
     if node_name:
@@ -122,7 +151,9 @@ async def service_ensure(request: Request, service: str, body: dict = Body(defau
     out = await agent.ensure_service_async(service, req)
     if out.ok and out.ready:
         out.base_url = _service_base_url(agent, out.port, request)
-        out.holders = book.acquire(agent.node_name, service, holder, started=out.started)
+        out.holders = book.acquire(agent.node_name, service, holder, started=out.started,
+                                   ttl=req.ttl_seconds or None)
+        steward.save()
     else:
         cluster.mark_node_suspect(agent.node_name, f"ensure '{service}' failed: {out.error}") \
             if "did not answer in time" in (out.error or "") else None
@@ -135,13 +166,22 @@ async def service_release(request: Request, service: str, body: dict = Body(defa
     cluster: JetsonClusterClient = request.app.state.cluster
     req = ReleaseRequest.from_dict(body)
     holder = req.holder or "anonymous"
-    book = _leases(request)
+    steward = _steward(request)
+    book = steward.leases
+    if not req.node:
+        service, _err = _resolve_name(request, cluster, service)
     node_name = req.node or book.node_of(service, holder)
     if not node_name:
         return ReleaseResult(ok=True, service=service).to_dict()        # nothing held: nothing to do
-    left, should_stop = book.release(node_name, service, holder)
+    # Stop now only under the default policy with no idle grace (what a
+    # release always did). Anything else lingers, idle from now, and the
+    # steward's next check applies the app's policy.
+    policy = steward.policy(service)
+    at_once = policy.mode == "unmanaged" and policy.idle_minutes <= 0
+    left, should_stop = book.release(node_name, service, holder, linger=not at_once)
+    steward.save()
     out = ReleaseResult(ok=True, service=service, node=node_name, holders=left)
-    if should_stop:
+    if should_stop and at_once:
         agent = cluster.get_agent(node_name)
         r = await agent.stop_service_async(service) if agent is not None else None
         if r is None or not getattr(r, "ok", False):
@@ -156,6 +196,19 @@ async def service_release(request: Request, service: str, body: dict = Body(defa
 @router.get(f"/api/{API_VERSION}/cluster/leases")
 async def cluster_leases(request: Request):
     return {"ok": True, "leases": _leases(request).snapshot()}
+
+
+@router.get(f"/api/{API_VERSION}/orchestration")
+async def orchestration_status(request: Request):
+    """The run policies, the leases, every app's state and policy, and what
+    the steward started and stopped lately."""
+    return {"ok": True, **_steward(request).describe()}
+
+
+@router.post(f"/api/{API_VERSION}/orchestration/check")
+async def orchestration_check(request: Request):
+    """Apply the policies now instead of at the next check."""
+    return {"ok": True, "done": await _steward(request).check()}
 
 
 # ── Cluster-routed service endpoints ─────────────────────────────────────
