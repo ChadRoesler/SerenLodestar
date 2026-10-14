@@ -422,6 +422,24 @@ class JetsonAgentClient:
             self._log(f"GET {path} -> {type(ex).__name__}: {ex}")
             return None
 
+    async def comfy_async(self, method: str, path: str, body: Optional[Any] = None,
+                          timeout: float = 35.0) -> tuple[int, Any]:
+        """The node's comfy routes (/api/v1/service/comfy/...): (status, JSON).
+        Never raises; 0 means the node did not answer, with why in the body.
+        Generating takes minutes, so the caller says how long to wait."""
+        try:
+            resp = await self._client.request(method, f"api/v1/service/comfy/{path.lstrip('/')}",
+                                              json=body, timeout=timeout)
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {"error": resp.text[:500]}
+            return resp.status_code, data
+        except httpx.TimeoutException:
+            return 0, {"error": f"{self._node_name} did not answer in {timeout:.0f}s"}
+        except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
+            return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
+
     async def _get_json_raw(self, path: str) -> Optional[Any]:
         """Return raw JSON data (dict/list) without DTO mapping."""
         try:

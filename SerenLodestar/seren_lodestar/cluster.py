@@ -318,6 +318,13 @@ class JetsonClusterClient:
         )
         return None
 
+    def nodes_for(self, capability: str) -> list[JetsonNodeOptions]:
+        """Every online node with a capability, the preferred ones first - for
+        a caller that picks among them itself (pictures go to the node whose
+        ComfyUI can draw the model asked for)."""
+        online = [n for n in self._options.nodes if self._is_online_with(n.name, capability)]
+        return sorted(online, key=lambda n: capability not in n.preferred_for)
+
     def _is_online_with(self, node_name: str, capability: str) -> bool:
         if self.is_suspect(node_name):
             return False

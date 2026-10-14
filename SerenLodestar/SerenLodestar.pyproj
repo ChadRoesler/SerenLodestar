@@ -40,6 +40,7 @@
     <Compile Include="seren_lodestar\agent_client.py" />
     <Compile Include="seren_lodestar\app.py" />
     <Compile Include="seren_lodestar\cluster.py" />
+    <Compile Include="seren_lodestar\comfy_templates.py" />
     <Compile Include="seren_lodestar\config.py" />
     <Compile Include="seren_lodestar\dtos.py" />
     <Compile Include="seren_lodestar\mcp\server.py" />
@@ -47,6 +48,7 @@
     <Compile Include="seren_lodestar\routes\agent_update.py" />
     <Compile Include="seren_lodestar\routes\chat.py" />
     <Compile Include="seren_lodestar\routes\cluster_routes.py" />
+    <Compile Include="seren_lodestar\routes\images.py" />
     <Compile Include="seren_lodestar\routes\info.py" />
     <Compile Include="seren_lodestar\routes\scheduler.py" />
     <Compile Include="seren_lodestar\routes\services.py" />
