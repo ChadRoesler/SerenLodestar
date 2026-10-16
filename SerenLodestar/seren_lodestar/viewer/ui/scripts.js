@@ -499,10 +499,12 @@ function renderUpdateConfirmBody(body, node) {
     body.innerHTML = `
         <div class="modal-confirm">
             <div class="modal-confirm-title">
-                Update agent on <strong>${escapeHtml(node.name)}</strong>?
+                Upgrade <strong>${escapeHtml(node.name)}</strong>?
             </div>
             <div class="modal-confirm-subtitle">
-                The agent will restart after the new code is extracted.
+                Every seren service on it that is behind the index: a backup to the stash,
+                then pip, an import check, a restart and health - its Observatory last.
+                A failure rolls that one back. Watch it on the Upgrades tab.
             </div>
             <div class="modal-confirm-buttons">
                 <button class="modal-confirm-btn yes" id="modal-update-confirm-yes">Yes</button>
@@ -511,7 +513,7 @@ function renderUpdateConfirmBody(body, node) {
         </div>
         <div class="modal-update-node armed-ready" id="modal-update-armed" role="button" tabindex="0">
             <div class="modal-update-node-icon">↑</div>
-            <div class="modal-update-node-label">Update Node</div>
+            <div class="modal-update-node-label">Upgrade Node</div>
         </div>
     `;
 
@@ -519,16 +521,13 @@ function renderUpdateConfirmBody(body, node) {
         modal.state = 'idle';
         renderModalContent();
     });
-    document.getElementById('modal-update-confirm-yes').addEventListener('click', () => {
-        modal.state = 'idle';
-        renderModalContent();
-        fireAgentUpdate(node.name);
-    });
-    document.getElementById('modal-update-armed').addEventListener('click', () => {
-        modal.state = 'idle';
-        renderModalContent();
-        fireAgentUpdate(node.name);
-    });
+    for (const id of ['modal-update-confirm-yes', 'modal-update-armed']) {
+        document.getElementById(id).addEventListener('click', () => {
+            modal.state = 'idle';
+            renderModalContent();
+            upgradeNode(node.name);
+        });
+    }
 }
 
 function renderCountdownBody(body, node) {
@@ -705,6 +704,48 @@ function fmtTime(iso) {
 }
 
 // ----------------------------------------------------------------------
+// Instance groups on a node card (design note, 16 Oct 2026): "seren-loci-wren",
+// "seren-memory-wren", "SerenObservatory-wren" ... is one install's worth
+// of services wearing the instance name ten times. Group them under the
+// instance, collapsed by default, and show each as the app it is: loci,
+// memory, observatory. Anything without an instance suffix (llama, kokoro,
+// searxng, a bare "seren-theatre") stays where it was.
+// ----------------------------------------------------------------------
+const INSTANCE_RE = /^(?:seren-|Seren)(.+?)-([A-Za-z0-9]+)$/;
+const expandedGroups = new Set();            // "node/instance", survives the poll's re-render
+
+function instanceOf(svcName) {
+    const m = INSTANCE_RE.exec(svcName);
+    if (!m) return null;
+    return { app: m[1].toLowerCase(), instance: m[2] };
+}
+
+// → [{instance, label, services: [{name, app}]}] in first-seen order, and the
+//   names that stay flat, in their original order.
+function groupServices(names) {
+    const groups = new Map();
+    const flat = [];
+    for (const name of names) {
+        const hit = instanceOf(name);
+        if (!hit) { flat.push(name); continue; }
+        if (!groups.has(hit.instance)) {
+            groups.set(hit.instance, { instance: hit.instance,
+                                       label: hit.instance.charAt(0).toUpperCase() + hit.instance.slice(1),
+                                       services: [] });
+        }
+        groups.get(hit.instance).services.push({ name, app: hit.app });
+    }
+    return { groups: [...groups.values()], flat };
+}
+
+function toggleGroup(nodeName, instance) {
+    const key = `${nodeName}/${instance}`;
+    if (expandedGroups.has(key)) expandedGroups.delete(key); else expandedGroups.add(key);
+    const el = document.getElementById('grid');
+    if (el && window._lastStatus) renderGrid(window._lastStatus);
+}
+
+// ----------------------------------------------------------------------
 // RENDER — /api/v1/system/status payload → DOM
 // ----------------------------------------------------------------------
 function renderNode(node) {
@@ -759,7 +800,40 @@ function renderNode(node) {
             searxngRolled = true;
         }
 
-        for (const svcName of node.installed_services) {
+        const { groups, flat } = groupServices(node.installed_services);
+        const svcRow = (svcName, shown, cls2) => {
+            const svcStatus = node.services?.[svcName]?.status;
+            const [sym, cls] = symbolFor(svcStatus);
+            const mem = svcStatus?.memory_mb;
+            const badge = serviceBadge(svcStatus);
+            return `
+                    <div class="svc-name ${cls2}" title="${escapeHtml(svcName)}">${badge.emoji ? `<span class="svc-badge ${badge.cls}" title="${escapeHtml(badge.title)}">${badge.emoji}</span>` : ''}${escapeHtml(shown)}</div>
+                    <div class="svc-mem">${fmtBytes(mem)}</div>
+                    <div class="svc-stat ${cls}">${sym}</div>
+                  `;
+        };
+        for (const g of groups) {
+            // The group row carries the worst status and the summed memory of
+            // what is inside it, so a collapsed instance still tells the truth.
+            let worstCls = 'ok', worstSym = '●', total = 0, hasMem = false;
+            for (const s of g.services) {
+                const st = node.services?.[s.name]?.status;
+                const [sym, cls] = symbolFor(st);
+                if ((STATUS_RANK[cls] ?? 0) > (STATUS_RANK[worstCls] ?? 0)) { worstCls = cls; worstSym = sym; }
+                if (st?.memory_mb != null) { total += st.memory_mb; hasMem = true; }
+            }
+            const open = expandedGroups.has(`${node.name}/${g.instance}`);
+            list.innerHTML += `
+                    <div class="svc-name svc-group" data-node="${escapeHtml(node.name)}" data-instance="${escapeHtml(g.instance)}"
+                         title="${g.services.length} services of the ${escapeHtml(g.instance)} instance">
+                      <span class="svc-caret">${open ? '⏷' : '⏵'}</span>${escapeHtml(g.label)}
+                      <span class="svc-count">${g.services.length}</span></div>
+                    <div class="svc-mem">${hasMem ? fmtBytes(total) : '-'}</div>
+                    <div class="svc-stat ${worstCls}">${worstSym}</div>
+                  `;
+            if (open) for (const s of g.services) list.innerHTML += svcRow(s.name, s.app, 'svc-in-group');
+        }
+        for (const svcName of flat) {
             if (svcName.toLowerCase().includes('searxng')) {
                 if (searxngRolled) {
                     const badge = serviceBadge({ service_type: 'docker_compose' });
@@ -772,16 +846,10 @@ function renderNode(node) {
                 }
                 continue;
             }
-            const svcStatus = node.services?.[svcName]?.status;
-            const [sym, cls] = symbolFor(svcStatus);
-            const mem = svcStatus?.memory_mb;
-            const badge = serviceBadge(svcStatus);
-            list.innerHTML += `
-                    <div class="svc-name">${badge.emoji ? `<span class="svc-badge ${badge.cls}" title="${escapeHtml(badge.title)}">${badge.emoji}</span>` : ''}${escapeHtml(svcName)}</div>
-                    <div class="svc-mem">${fmtBytes(mem)}</div>
-                    <div class="svc-stat ${cls}">${sym}</div>
-                  `;
+            list.innerHTML += svcRow(svcName, svcName, '');
         }
+        list.querySelectorAll('.svc-group').forEach(el =>
+            el.addEventListener('click', ev => { ev.stopPropagation(); toggleGroup(el.dataset.node, el.dataset.instance); }));
     }
     card.appendChild(list);
 
@@ -936,74 +1004,48 @@ function setLastRefresh() {
 }
 
 // ----------------------------------------------------------------------
-// AGENT UPDATE — nodeName targets one node, null broadcasts to all.
+// UPGRADE ONE NODE — from its card: a Lodestar upgrade run narrowed to that
+// node (every seren service on it that is behind). This replaced the
+// agent-update push, which needed a tarball path in the yaml that no pip
+// install has and so only ever answered "not configured".
 // ----------------------------------------------------------------------
-async function fireAgentUpdate(nodeName) {
-    const isBroadcast = nodeName == null;
-    const url = isBroadcast
-        ? '/api/v1/system/agent-update'
-        : `/api/v1/node/${encodeURIComponent(nodeName)}/agent-update`;
-
-    const updateBtn = document.getElementById('modal-update-node');
-    if (updateBtn) {
-        updateBtn.classList.add('updating');
-        updateBtn.style.pointerEvents = 'none';
-    }
-
-    const broadcastBtn = document.getElementById('cfg-update-nodes');
-    const resultEl = document.getElementById('cfg-update-result');
-    if (isBroadcast && broadcastBtn) {
-        broadcastBtn.disabled = true;
-        broadcastBtn.textContent = 'updating…';
-        if (resultEl) { resultEl.style.display = 'none'; resultEl.textContent = ''; }
-    }
-
-    const resp = await hostApi(url, { method: 'POST' });
-
-    if (updateBtn) {
-        updateBtn.classList.remove('updating');
-        updateBtn.style.pointerEvents = '';
-    }
-
-    if (isBroadcast && broadcastBtn) {
-        broadcastBtn.disabled = false;
-        broadcastBtn.textContent = 'update all nodes';
-    }
-
-    if (!resp) {
-        if (isBroadcast && resultEl) {
-            resultEl.className = 'update-result err';
-            resultEl.textContent = 'Update failed: no response from Lodestar.';
-            resultEl.style.display = '';
-        } else {
-            setModalFlash('Observatory update failed: no response from Lodestar.', 'err');
-        }
+async function upgradeNode(nodeName) {
+    setModalFlash(`starting an upgrade run for ${nodeName}…`, 'info');
+    const { status, body } = await postUpgrade({ nodes: [nodeName], only_behind: true, backup: true,
+                                                 reason: `node card: ${nodeName}` });
+    if (status === 202 && body.ok) {
+        setModalFlash(`run ${body.run.id} started for ${nodeName}: ${body.run.steps.length} step(s) - see Upgrades`, 'ok');
+        _upgOpenRun = body.run.id;
+        showTab('upgrades');
+        closeNodeModal();
+        refreshUpgrades();
         return;
     }
+    setModalFlash(body.error || `Lodestar answered HTTP ${status}`, 'err');
+}
 
-    if (isBroadcast) {
-        const results = resp.results || [];
-        const lines = results.map(r =>
-            r.ok ? `✓ ${r.node}: ${r.message || 'ok'}` : `✗ ${r.node}: ${r.error || r.message || 'failed'}`
-        );
-        const allOk = results.every(r => r.ok);
-        if (resultEl) {
-            resultEl.className = `update-result ${allOk ? 'ok' : 'err'}`;
-            resultEl.textContent = lines.join('\n') || (resp.error ? `Error: ${resp.error}` : 'No nodes updated.');
-            resultEl.style.display = '';
-        }
-    } else {
-        if (resp.ok) {
-            setModalFlash(`Update sent to ${nodeName} — agent will restart shortly.`, 'ok');
-        } else {
-            setModalFlash(`Update failed on ${nodeName}: ${resp.error || resp.message || 'unknown error'}`, 'err');
-        }
+// POST /api/v1/upgrade and keep the answer whatever the status: a 409 here is
+// a reason ("a run is already going", "nothing to upgrade"), not a failure
+// to bury behind the banner.
+async function postUpgrade(json) {
+    const headers = { 'Accept': 'application/json', 'Content-Type': 'application/json' };
+    const token = (typeof getToken === 'function' ? getToken() : '') || '';
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    try {
+        const resp = await fetch('/api/v1/upgrade', { method: 'POST', headers, body: JSON.stringify(json) });
+        let body = {};
+        try { body = await resp.json(); } catch (e) { body = {}; }
+        if (resp.status === 401 || resp.status === 403) banner(`API /api/v1/upgrade → HTTP ${resp.status} (set the 🔑 token)`);
+        return { status: resp.status, body };
+    } catch (e) {
+        banner(`Cannot reach Lodestar — ${e.message}`);
+        return { status: 0, body: { error: `cannot reach Lodestar: ${e.message}` } };
     }
 }
 
 // ----------------------------------------------------------------------
-// SETTINGS MODAL — now just the broadcast agent-update action. Token lives
-// in the shell's 🔑 modal; same-origin means no URL field.
+// SETTINGS MODAL — a door to the Upgrades tab and a word about the token,
+// which lives in the shell's 🔑 modal; same-origin means no URL field.
 // ----------------------------------------------------------------------
 function initSettings() {
     document.getElementById('settings-close').addEventListener('click', closeSettingsModal);
@@ -1016,8 +1058,10 @@ function initSettings() {
         if (e.key === 'Escape' && isSettingsOpen()) closeSettingsModal();
     });
 
-    document.getElementById('cfg-update-nodes').addEventListener('click', () => {
-        fireAgentUpdate(null);
+    document.getElementById('cfg-open-upgrades').addEventListener('click', () => {
+        closeSettingsModal();
+        showTab('upgrades');
+        refreshUpgrades();
     });
 }
 
@@ -1158,14 +1202,14 @@ async function startUpgrades() {
     const go = document.getElementById('upg-go');
     go.disabled = true;
     upgFlash('starting the run…', 'info');
-    const out = await hostApi('/api/v1/upgrade', { method: 'POST', json: { only_behind: true, backup: true, reason: 'from the viewer' } });
-    if (!out || !out.ok) {
-        upgFlash(out?.error || 'Lodestar would not start it (is a run already going?)', 'err');
+    const { status, body } = await postUpgrade({ only_behind: true, backup: true, reason: 'from the viewer' });
+    if (status !== 202 || !body.ok) {
+        upgFlash(body.error || `Lodestar answered HTTP ${status}`, 'err');
         go.disabled = false;
         return;
     }
-    upgFlash(`run ${out.run.id} started: ${out.run.steps.length} step(s)`, 'ok');
-    _upgOpenRun = out.run.id;
+    upgFlash(`run ${body.run.id} started: ${body.run.steps.length} step(s)`, 'ok');
+    _upgOpenRun = body.run.id;
     await refreshUpgrades();
 }
 
@@ -1234,8 +1278,8 @@ function initUpgrades() {
         const row = e.target.closest('tr[data-run]');
         if (row) openRun(row.dataset.run);
     });
-    // The shell switches views; the first look at this one fetches.
-    document.querySelectorAll('.tab[data-tab="upgrades"]').forEach(b => b.addEventListener('click', () => refreshUpgrades()));
+    // The tab's own onclick (tabs.html) switches the view and fetches: the
+    // shell styles tabs and activates the first, it does not wire clicks.
 }
 
 // ----------------------------------------------------------------------

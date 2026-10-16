@@ -192,6 +192,13 @@
     .svc-list .svc-mem { color: var(--text-mid); text-align: right; }
     .svc-list .svc-stat { text-align: center; font-size: 12px; font-weight: bold; width: 1em; }
 
+    /* An instance group: one row for the whole install, click to open. */
+    .svc-list .svc-group { cursor: pointer; font-weight: 600; user-select: none; }
+        .svc-list .svc-group .svc-caret { display: inline-block; width: 1.1em; color: var(--text-mid); }
+        .svc-list .svc-group .svc-count { color: var(--text-lo); font-weight: 400; margin-left: 0.5em; font-size: 0.85em; }
+        .svc-list .svc-group:hover { color: var(--text-hi); }
+    .svc-list .svc-name.svc-in-group { padding-left: 1.3em; color: var(--text-mid); }
+
 .svc-stat.ok { color: var(--status-ok); }
 .svc-stat.warn { color: var(--status-warn); }
 .svc-stat.down { color: var(--status-down); }

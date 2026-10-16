@@ -24,6 +24,10 @@ def test_the_tab_and_its_view_exist():
     body = (UI / "body.html").read_text(encoding="utf-8")
     assert 'data-tab="upgrades"' in tabs
     assert 'class="view" id="upgrades"' in body
+    # The shell styles tabs and activates the first; the CLICK is each tab's
+    # own. Without onclick the tab was a tab that did nothing (16 Oct 2026).
+    for tab in re.findall(r"<button class=\"tab[^>]*>", tabs):
+        assert "onclick=\"showTab(" in tab, tab
     for el in ("upg-behind", "upg-plan", "upg-go", "upg-runs", "upg-run-detail", "upg-refresh"):
         assert f'id="{el}"' in body, el
 
@@ -32,6 +36,7 @@ def test_the_script_uses_only_the_upgrade_routes_it_should():
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     upgrade_calls = set(re.findall(r"hostApi\(\s*[`'\"](/api/v1/upgrade[^`'\"]*)", script))
     assert upgrade_calls == {"/api/v1/upgrade/behind", "/api/v1/upgrade", "/api/v1/upgrade/${encodeURIComponent(id)}"}, upgrade_calls
+    assert script.count("fetch('/api/v1/upgrade'") == 1, "every POST goes through postUpgrade, which keeps the 409's reason"
     assert "function refreshUpgrades" in script and "function initUpgrades" in script
     assert "initUpgrades();" in script, "wired at start, like the other panels"
     assert "if (upgradesVisible()) refreshUpgrades();" in script, "the poll keeps a running run fresh"
@@ -40,11 +45,26 @@ def test_the_script_uses_only_the_upgrade_routes_it_should():
 def test_a_run_is_behind_a_confirm_and_asks_only_for_what_is_behind():
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     start = script[script.index("async function startUpgrades"):script.index("function renderRuns")]
-    assert "confirm(" in start and start.index("confirm(") < start.index("hostApi(")
+    assert "confirm(" in start and start.index("confirm(") < start.index("postUpgrade(")
     assert "only_behind: true" in start and "backup: true" in start
     assert "dry_run" not in start
     plan = script[script.index("async function planUpgrades"):script.index("function renderPlan")]
     assert "dry_run: true" in plan and "confirm(" not in plan
+
+
+def test_the_node_card_upgrades_that_node_and_the_tarball_push_is_gone():
+    """The old Update Node / update all nodes pushed an Observatory tarball to a
+    path in the yaml; no pip install has one, so both only ever answered
+    "not configured". The node card now starts an upgrade run narrowed to
+    its node; Settings points at the tab."""
+    script = (UI / "scripts.js").read_text(encoding="utf-8")
+    body = (UI / "body.html").read_text(encoding="utf-8")
+    assert "/agent-update" not in script and "fireAgentUpdate" not in script
+    node = script[script.index("async function upgradeNode"):script.index("async function postUpgrade")]
+    assert "nodes: [nodeName]" in node and "only_behind: true" in node and "backup: true" in node
+    confirm = script[script.index("function renderUpdateConfirmBody"):script.index("function renderCountdownBody")]
+    assert "upgradeNode(node.name)" in confirm and "Upgrade" in confirm
+    assert 'id="cfg-open-upgrades"' in body and 'id="cfg-update-nodes"' not in body
 
 
 def test_the_shell_serves_the_fragments(client):

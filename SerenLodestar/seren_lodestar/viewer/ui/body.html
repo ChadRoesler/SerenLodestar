@@ -51,9 +51,11 @@
   </div>
 </div>
 
-<!-- Settings modal — stripped to the broadcast agent-update action. The token
-     now lives in the shell's 🔑 modal, and same-origin serving means there's
-     no Lodestar-URL field to configure anymore. -->
+<!-- Settings modal. The token lives in the shell's 🔑 modal, and same-origin
+     serving means there's no Lodestar-URL field. Updating is the Upgrades
+     tab's job now: the old "update all nodes" pushed a tarball of the
+     Observatory to a path in the yaml, which no pip install has, so it only
+     ever answered "not configured" (16 Oct 2026). -->
 <div class="modal-backdrop" id="settings-backdrop">
   <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="modal-header">
@@ -66,12 +68,12 @@
       <button class="modal-close" id="settings-close" aria-label="Close">✕</button>
     </div>
     <div class="settings-body">
-      <button class="update-nodes-btn" id="cfg-update-nodes">update all nodes</button>
-      <div class="update-result" id="cfg-update-result" style="display:none;"></div>
+      <button class="update-nodes-btn" id="cfg-open-upgrades">open the Upgrades tab</button>
       <div class="hint">
         Set your bearer token via the <b>🔑</b> button in the header.
-        <b>Update all nodes</b> pushes the agent package to every node and
-        restarts each node agent.
+        <b>Upgrades</b> shows every seren service against the index's newest,
+        plans a run, and moves what is behind: a backup first, then pip, an
+        import check, a restart and health, with a rollback when one fails.
       </div>
     </div>
   </div>

@@ -1,5 +1,8 @@
 <!-- The cluster head's dashboard: the node grid is the first page, and the
      shell auto-activates it. Upgrades is the second: /api/v1/upgrade had
-     routes and Workbench tools for weeks before it had a page. -->
-<button class="tab active" data-tab="cluster">Cluster</button>
-<button class="tab" data-tab="upgrades">Upgrades</button>
+     routes and Workbench tools for weeks before it had a page.
+     Shell contract: class="tab" data-tab="<view id>" for the styling and the
+     first-tab activation; the CLICK is ours - the shell does not wire one, so
+     a tab without onclick is a tab that does nothing (16 Oct 2026). -->
+<button class="tab active" data-tab="cluster" onclick="showTab('cluster')">Cluster</button>
+<button class="tab" data-tab="upgrades" onclick="showTab('upgrades'); refreshUpgrades()">Upgrades</button>
