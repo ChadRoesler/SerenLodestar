@@ -128,8 +128,12 @@ async def comfy_catalog(request: Request):
         for key, f in (cat.get("files") or {}).items():
             entry = files.setdefault(key, {**f, "nodes": [], "drawable_on": []})
             entry["nodes"].append(agent.node_name)
-            if f.get("role") in comfy_templates.MODEL_ROLES and can_draw(cat, f.get("arch") or ""):
-                entry["drawable_on"].append(agent.node_name)
+            if f.get("role") in comfy_templates.MODEL_ROLES:
+                # how the model wants to be prompted rides with it, so a
+                # request form can guide the words before there is a plan
+                entry.setdefault("style", comfy_templates.prompt_style(f))
+                if can_draw(cat, f.get("arch") or ""):
+                    entry["drawable_on"].append(agent.node_name)
     return {"files": files, "node": catalogs[0][0].node_name,
             "nodes": [{"node": a.node_name, "families": c.get("families") or [], "summary": c.get("summary"),
                        "scan": c.get("scan"), "profiles": c.get("profiles") or {}} for a, c in catalogs]}
@@ -245,15 +249,21 @@ async def image(request: Request, body: dict = Body(...)):
     for agent, workflow, described in tries:
         up = await service_ensure(request, SERVICE, {"holder": holder, "reason": "drawing a picture",
                                                      "node": agent.node_name, "wait_seconds": 240})
+        # put_away: ComfyUI is put away after the drawing when nobody else
+        # holds it, whoever started it - a model on a small GPU is memory the
+        # next job cannot have (and the Spark's stayed up all night once).
+        let_go = {"holder": holder, "node": agent.node_name, "put_away": True}
         if not up.get("ok") or not up.get("ready"):
             asleep.append(f"{agent.node_name}: {up.get('error') or 'did not come up'}")
+            if up.get("started"):
+                await service_release(request, SERVICE, let_go)   # what this ensure started and could not use
             continue                         # the next node that can draw it
         try:
             status, out = await agent.comfy_async("POST", "generate", {
                 "workflow": workflow, "timeout_seconds": DRAW_TIMEOUT,
                 "free_after": bool(body.get("free_after", True))}, timeout=DRAW_TIMEOUT + 60)
         finally:
-            await service_release(request, SERVICE, {"holder": holder, "node": agent.node_name})
+            await service_release(request, SERVICE, let_go)
         if status != 200 or not isinstance(out, dict) or not out.get("ok"):
             detail = out if isinstance(out, dict) else {"error": str(out)}
             return JSONResponse({"error": detail.get("error") or "the drawing failed", "detail": detail.get("detail"),

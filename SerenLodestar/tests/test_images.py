@@ -201,6 +201,9 @@ def test_a_picture_from_words_through_a_real_observatory(tmp_path, monkeypatch):
         assert cat["node"] == "xavier32gb" and cat["nodes"][0]["summary"]["lora"] == {"Krea 2": 1}
         assert cat["files"]["loras/Storybook_Folk_Art_Krea2.safetensors"]["nodes"] == ["xavier32gb"]
         assert box["running"] is False, "the catalog is read without waking ComfyUI"
+        model = next(f for f in cat["files"].values() if f.get("role") in ("checkpoint", "diffusion"))
+        assert model["style"]["style"] == "prose" and "Sentences" in model["style"]["guide"], "how to prompt it rides with the model"
+        assert "style" not in cat["files"]["loras/Storybook_Folk_Art_Krea2.safetensors"]
 
         plan = c.post("/api/v1/image/plan", json={"prompt": "a wren", "seed": 7,
                                                   "loras": [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.7}]}).json()
@@ -213,6 +216,11 @@ def test_a_picture_from_words_through_a_real_observatory(tmp_path, monkeypatch):
         assert drawn["running"] is True, "ComfyUI was up while it drew"
         assert drawn["free_after"] is True and drawn["workflow"] == plan["workflow"]
         assert box["stops"] == 1 and box["running"] is False, "and let go after"
+        # ComfyUI brought up by hand (or left up): still put away after a draw
+        # when nobody else holds it (15 Oct 2026: the Spark's ran all night)
+        box["running"], box["stops"] = True, 0
+        assert c.post("/api/v1/image", json={"prompt": "a wren", "seed": 7, "holder": "wren"}).json()["ok"]
+        assert box["stops"] == 1 and box["running"] is False, "put away, whoever started it"
 
         # An edited plan is drawn as it is.
         edited = {**plan["workflow"], "8": {**plan["workflow"]["8"], "inputs": {**plan["workflow"]["8"]["inputs"], "steps": 12}}}

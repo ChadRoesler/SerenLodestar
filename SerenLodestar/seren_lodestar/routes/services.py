@@ -181,7 +181,14 @@ async def service_release(request: Request, service: str, body: dict = Body(defa
     left, should_stop = book.release(node_name, service, holder, linger=not at_once)
     steward.save()
     out = ReleaseResult(ok=True, service=service, node=node_name, holders=left)
-    if should_stop and at_once:
+    # put_away (15 Oct 2026): the caller says a backend is to be stopped when
+    # nobody holds it, WHOEVER started it. The lease book only stops what an
+    # ensure started, so ComfyUI brought up by hand once stayed up through
+    # every draw after - a model held on a small GPU that nobody was using.
+    # The image route says it for ComfyUI; the policy still wins for an app
+    # that lingers.
+    put_away = bool(body.get("put_away")) and not left and at_once
+    if (should_stop or put_away) and at_once:
         agent = cluster.get_agent(node_name)
         r = await agent.stop_service_async(service) if agent is not None else None
         if r is None or not getattr(r, "ok", False):

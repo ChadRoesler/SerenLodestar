@@ -391,8 +391,45 @@ class JetsonAgentClient:
             self._log(f"POST {path} -> {type(ex).__name__}: {ex}")
             return {"ok": False, "problems": [f"{type(ex).__name__}: {ex}"]}
 
+    async def fetch_service_snapshot_archive_async(self, service: str, snapshot_id: str, dest: "Path",
+                                                   since: Optional[str] = None) -> Optional[str]:
+        """Stream one snapshot's archive into the file `dest` (never held in
+        memory: a store of pictures is gigabytes). `since`: a snapshot the
+        stash already holds; the service then sends only what changed and
+        names it in X-Seren-Since. Returns that name ("" for a whole
+        archive), or None when nothing could be fetched. 15 Oct 2026."""
+        import os
+        from pathlib import Path
+        path = f"api/v1/service/{quote(service, safe='')}/stores/snapshots/{quote(snapshot_id, safe='')}/archive"
+        dest = Path(dest)
+        tmp = dest.with_name(dest.name + ".partial")
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            async with self._client.stream("GET", path, params={"since": since} if since else None,
+                                           timeout=1800.0) as resp:
+                if not resp.is_success:
+                    self._log(f"GET {path} -> HTTP {resp.status_code}")
+                    return None
+                with open(tmp, "wb") as f:
+                    async for chunk in resp.aiter_bytes():
+                        f.write(chunk)
+                os.replace(tmp, dest)
+                return resp.headers.get("x-seren-since", "") or ""
+        except httpx.TimeoutException:
+            self._log(f"GET {path} -> timeout")
+            return None
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"GET {path} -> {type(ex).__name__}: {ex}")
+            return None
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
     async def get_service_snapshot_archive_async(self, service: str, snapshot_id: str) -> Optional[bytes]:
-        """One snapshot as a tar.gz, or None."""
+        """One snapshot as a tar.gz, or None. The older, in-memory fetch;
+        fetch_service_snapshot_archive_async streams to a file."""
         path = f"api/v1/service/{quote(service, safe='')}/stores/snapshots/{quote(snapshot_id, safe='')}/archive"
         try:
             resp = await self._client.get(path, timeout=300.0)
@@ -439,6 +476,32 @@ class JetsonAgentClient:
             return 0, {"error": f"{self._node_name} did not answer in {timeout:.0f}s"}
         except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
             return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
+
+    async def relay_json_async(self, path: str, timeout: float = 35.0) -> tuple[int, Any]:
+        """A GET relayed through the node's Observatory: (status, JSON).
+        Never raises; 0 means the node did not answer, with why in the
+        body. For a route that fronts a node's own route (the gallery)."""
+        try:
+            resp = await self._client.get(path, timeout=timeout)
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {"error": resp.text[:500]}
+            return resp.status_code, data
+        except httpx.TimeoutException:
+            return 0, {"error": f"{self._node_name} did not answer in {timeout:.0f}s"}
+        except Exception as ex:  # noqa: BLE001
+            return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
+
+    async def open_relay_async(self, path: str, timeout: float = 300.0) -> Optional[httpx.Response]:
+        """A GET relayed through the node's Observatory, streamed: the
+        httpx.Response, still open, for a route to pass the body through
+        (it closes it). None when the node did not answer."""
+        try:
+            return await self._client.send(self._client.build_request("GET", path, timeout=timeout), stream=True)
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"GET {path} -> {type(ex).__name__}: {ex}")
+            return None
 
     async def _get_json_raw(self, path: str) -> Optional[Any]:
         """Return raw JSON data (dict/list) without DTO mapping."""

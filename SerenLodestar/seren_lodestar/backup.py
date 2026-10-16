@@ -213,30 +213,62 @@ class BackupService:
         remote = listed.get("snapshots") or []
         keeper = self._keeper(node, svc)
         have = {s["id"] for s in keeper.list()}
-        got, failed = [], []
+        got, failed, linked = [], [], {}
         for row in remote:
             if len(got) >= self._cfg.max_per_pull:
                 break
             sid = str(row.get("id") or "")
             if not sid or sid in have:
                 continue
-            data = await agent.get_service_snapshot_archive_async(svc, sid)
-            if data is None:
-                failed.append(sid)
-                rep.errors.append(f"{node}/{svc}: could not fetch snapshot {sid}")
-                continue
-            try:
-                await asyncio.to_thread(unpack_snapshot, data, keeper.root, sid)
-            except ValueError as e:
-                failed.append(sid)
-                rep.errors.append(f"{node}/{svc}: snapshot {sid} did not verify: {e}")
-                continue
+            # INCREMENTAL (15 Oct 2026): ask for the archive since the newest
+            # snapshot stashed here. The service leaves out what that one
+            # already holds (a blobs store's pictures), the archive streams to
+            # a file, and the unpack links the rest from the stash's copy -
+            # one gigabyte over the wire and one on disk, however many
+            # snapshots share it. An agent from before this fetches whole.
+            since = max(have) if have else None
+            if hasattr(agent, "fetch_service_snapshot_archive_async"):
+                incoming = keeper.root / f"{sid}.incoming"
+                honoured = await agent.fetch_service_snapshot_archive_async(svc, sid, incoming, since=since)
+                if honoured is None:
+                    failed.append(sid)
+                    rep.errors.append(f"{node}/{svc}: could not fetch snapshot {sid}")
+                    continue
+                size = incoming.stat().st_size
+                link_from = keeper.root / honoured if honoured and (keeper.root / honoured).is_dir() else None
+                try:
+                    await asyncio.to_thread(unpack_snapshot, incoming, keeper.root, sid, link_from)
+                except ValueError as e:
+                    failed.append(sid)
+                    rep.errors.append(f"{node}/{svc}: snapshot {sid} did not verify: {e}")
+                    continue
+                finally:
+                    try:
+                        incoming.unlink()
+                    except OSError:
+                        pass
+                if honoured:
+                    linked[sid] = honoured
+            else:
+                data = await agent.get_service_snapshot_archive_async(svc, sid)
+                if data is None:
+                    failed.append(sid)
+                    rep.errors.append(f"{node}/{svc}: could not fetch snapshot {sid}")
+                    continue
+                size = len(data)
+                try:
+                    await asyncio.to_thread(unpack_snapshot, data, keeper.root, sid)
+                except ValueError as e:
+                    failed.append(sid)
+                    rep.errors.append(f"{node}/{svc}: snapshot {sid} did not verify: {e}")
+                    continue
             got.append(sid)
+            have.add(sid)
             rep.pulled += 1
-            self._log(f"stashed {node}/{svc}/{sid} ({len(data)} bytes)")
+            self._log(f"stashed {node}/{svc}/{sid} ({size} bytes" + (f", since {linked[sid]}" if sid in linked else "") + ")")
         pruned = keeper.prune() if got else []
-        return {"stashed": got, "already_had": len(have), "remote": len(remote), "failed": failed, "pruned": pruned,
-                "took_fresh": take}
+        return {"stashed": got, "already_had": len(have) - len(got), "remote": len(remote), "failed": failed,
+                "pruned": pruned, "took_fresh": take, "incremental": linked}
 
 
     # ── the rehearsal ─────────────────────────────────────────────────────

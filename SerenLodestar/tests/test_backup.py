@@ -64,6 +64,18 @@ class FakeAgent:
             return self.keepers[svc].archive(other)
         return data
 
+    async def fetch_service_snapshot_archive_async(self, svc, sid, dest, since=None):
+        """The streaming fetch (15 Oct 2026): the archive into a file, made
+        since a snapshot the stash holds when the node still has it."""
+        k = self.keepers[svc]
+        want = sid
+        if sid in self.forged:
+            want = next(r["id"] for r in k.list() if r["id"] != sid)
+        honoured = since if since and k.snapshot_dir(since) is not None else None
+        if k.archive_to(want, Path(dest), since=honoured) is None:
+            return None
+        return honoured or ""
+
 
 class FakeCluster:
     def __init__(self, nodes: dict[str, tuple[bool, FakeAgent]]):
@@ -111,6 +123,32 @@ def test_a_pull_asks_fetches_verifies_and_stashes(tmp_path):
     assert rep2.pulled == 0 and rep2.nodes["desktop"]["SerenMemory-wren"]["already_had"] == 1
     assert svc.describe()["nodes"]["desktop"]["SerenMemory-wren"]["count"] == 1
     assert svc.describe()["last_pull"]["reason"] == "again"
+
+
+def test_the_next_pull_is_incremental_and_the_stash_shares_what_did_not_change(tmp_path):
+    """15 Oct 2026: the second snapshot's unchanged file is left out of the
+    archive, linked from the stash's copy of the first, and verified whole."""
+    import os
+    svc, agent, mem, loci = _world(tmp_path)
+    asyncio.run(svc.pull("first"))
+    first = svc.describe()["nodes"]["desktop"]["SerenMemory-wren"]["latest"]["id"]
+    second = mem.snapshot("the next day", now=time.time() + 60)["id"]   # the file store did not change
+    rep = asyncio.run(svc.pull("second", take_fresh=False))
+    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    assert rep.errors == [], rep.errors
+    assert got["stashed"] == [second] and got["incremental"] == {second: first}, got
+    stash = tmp_path / "stash" / "desktop" / "SerenMemory-wren"
+    assert verify_snapshot(stash / second) == []
+    assert os.path.samefile(stash / first / "raw" / "it" / "seren-memory.json", stash / second / "raw" / "it" / "seren-memory.json")
+    assert not list(stash.glob("*.incoming*")), "the streamed archive is gone once unpacked"
+    # a node that pruned the snapshot the stash would link from sends the whole thing
+    import shutil
+    shutil.rmtree(mem.snapshot_dir(first))
+    shutil.rmtree(mem.snapshot_dir(second))
+    third = mem.snapshot("later", now=time.time() + 120)["id"]     # its own stamp: ids are per second
+    rep = asyncio.run(svc.pull("third", take_fresh=False))
+    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    assert got["stashed"] == [third] and got["incremental"] == {} and verify_snapshot(stash / third) == []
 
 
 def test_only_what_is_missing_newest_first_and_the_retention(tmp_path):
