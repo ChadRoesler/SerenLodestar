@@ -846,6 +846,7 @@ async function refresh() {
 
     window._lastStatus = status;
     refreshModal();
+    if (upgradesVisible()) refreshUpgrades();
 }
 
 function renderGrid(status) {
@@ -1033,9 +1034,215 @@ function isSettingsOpen() {
 }
 
 // ----------------------------------------------------------------------
+// UPGRADES TAB — /api/v1/upgrade (seren_lodestar.upgrade): what is behind
+// the index, a dry run, a run, and the runs so far. The routes and the
+// Workbench tools were there first; this is the page they never had.
+// Nothing is decided here: `behind`, the plan and the order are Lodestar's.
+// ----------------------------------------------------------------------
+const UPG_STATE_CLASS = { done: 'ok', current: 'ok', running: 'run', pending: 'wait', handed_off: 'run',
+                          partial: 'warn', held: 'warn', skipped: 'warn', failed: 'bad', not_started: 'wait' };
+
+function upgradesVisible() {
+    const v = document.getElementById('upgrades');
+    return !!(v && v.classList.contains('active'));
+}
+
+function upgFlash(msg, type) {
+    const el = document.getElementById('upg-flash');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'upg-flash' + (msg ? ` visible ${type || 'info'}` : '');
+}
+
+function upgBadge(state) {
+    const s = state || 'unknown';
+    return `<span class="upg-state ${UPG_STATE_CLASS[s] || 'wait'}">${escapeHtml(s.replace('_', ' '))}</span>`;
+}
+
+function upgCell(v) {
+    return escapeHtml(v == null ? '—' : String(v));
+}
+
+let _upgBehind = null;      // the last /upgrade/behind
+let _upgStatus = null;      // the last /upgrade describe()
+let _upgOpenRun = null;     // the run shown in detail
+
+async function refreshUpgrades(refreshIndex = false) {
+    const [behind, status] = await Promise.all([
+        hostApi('/api/v1/upgrade/behind' + (refreshIndex ? '?refresh=true' : '')),
+        hostApi('/api/v1/upgrade'),
+    ]);
+    if (behind) { _upgBehind = behind; renderBehind(behind); }
+    if (status) { _upgStatus = status; renderRuns(status); }
+    const go = document.getElementById('upg-go');
+    const moves = !!(behind && behind.behind && behind.behind.length);
+    go.disabled = !moves || !!(status && status.busy);
+    go.title = status && status.busy ? 'a run is going' : moves ? `move ${behind.behind.length} service(s) to their newest`
+             : 'everything is on its newest';
+    if (_upgOpenRun && status && !status.busy) {
+        const fresh = (status.runs || []).find(r => r.id === _upgOpenRun);
+        if (fresh) renderRunDetail(fresh);
+    }
+}
+
+function renderBehind(data) {
+    const rows = data.services || [];
+    const n = (data.behind || []).length;
+    document.getElementById('upg-behind-count').textContent =
+        rows.length ? `${n} of ${rows.length} behind` + (data.unknown_nodes?.length ? ` · ${data.unknown_nodes.join(', ')} did not say` : '') : '';
+    const tb = document.querySelector('#upg-behind tbody');
+    if (!rows.length) {
+        tb.innerHTML = '<tr><td class="upg-empty">no online node reports a seren service an Observatory can upgrade</td></tr>';
+        return;
+    }
+    tb.innerHTML = '<tr><th>node</th><th>service</th><th>running</th><th>newest</th><th></th></tr>'
+        + rows.map(r => {
+            const state = r.behind === true ? 'behind' : r.behind === false ? 'current' : 'unknown';
+            const why = r.latest_error ? ` title="${escapeHtml(r.latest_error)}"` : '';
+            return `<tr class="${state}"><td>${upgCell(r.node)}</td><td>${upgCell(r.service)}</td>`
+                 + `<td class="mono">${upgCell(r.version)}</td><td class="mono"${why}>${upgCell(r.latest)}</td>`
+                 + `<td>${r.behind === true ? '<span class="upg-state warn">↑ behind</span>'
+                        : r.behind === false ? '<span class="upg-state ok">current</span>'
+                        : '<span class="upg-state wait">?</span>'}</td></tr>`;
+        }).join('');
+}
+
+async function planUpgrades() {
+    const btn = document.getElementById('upg-plan');
+    btn.disabled = true;
+    upgFlash('asking every node for its dry run…', 'info');
+    try {
+        const plan = await hostApi('/api/v1/upgrade', { method: 'POST', json: { dry_run: true, only_behind: true } });
+        if (!plan) { upgFlash('the plan did not come back', 'err'); return; }
+        renderPlan(plan);
+        upgFlash(plan.ok ? 'plan ready - nothing was changed' : 'plan ready, with problems - see each line', plan.ok ? 'ok' : 'err');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function renderPlan(plan) {
+    const card = document.getElementById('upg-plan-card');
+    card.hidden = false;
+    const order = plan.order || [];
+    const current = new Set(plan.current || []);
+    const lines = order.map(key => {
+        const [node, svc] = key.split('/');
+        const d = ((plan.nodes || {})[node] || {})[svc] || {};
+        let state, what;
+        if (current.has(key)) { state = 'current'; what = `${upgCell(d.current)} is the newest`; }
+        else if (d.skipped) { state = 'skipped'; what = upgCell(d.skipped); }
+        else if (d.held) { state = 'held'; what = upgCell(((d.needs || {}).problems || []).join('; ') || 'a peer is too old'); }
+        else if (d.error) { state = 'failed'; what = upgCell(d.error); }
+        else {
+            state = 'pending';
+            const moves = (d.would_install || []).map(w => `${w.name} ${w.version}`);
+            what = moves.length ? `would install ${upgCell(moves.join(', '))}` : 'nothing to install';
+            if (d.before && d.package) what = `${upgCell(d.before[d.package])} → ` + what;
+        }
+        return `<tr class="${state}"><td>${upgCell(node)}</td><td>${upgCell(svc)}</td><td>${upgBadge(state)}</td><td>${what}</td></tr>`;
+    });
+    const moving = order.filter(k => !current.has(k)).length;
+    document.getElementById('upg-plan-sum').textContent =
+        `${moving} would move, ${current.size} current` + (plan.skipped_offline?.length ? ` · offline: ${plan.skipped_offline.join(', ')}` : '');
+    document.getElementById('upg-plan-body').innerHTML =
+        `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>node</th><th>service</th><th></th><th>in run order</th></tr>${lines.join('')}</tbody></table></div>`
+        + (plan.held?.length ? `<div class="upg-note">held: ${escapeHtml(plan.held.join(' · '))}</div>` : '')
+        + (plan.error ? `<div class="upg-note bad">${escapeHtml(plan.error)}</div>` : '');
+}
+
+async function startUpgrades() {
+    const n = (_upgBehind?.behind || []).length;
+    const list = (_upgBehind?.behind || []).slice(0, 12).join('\n') + (n > 12 ? `\n… and ${n - 12} more` : '');
+    if (!confirm(`Upgrade ${n} service(s) that are behind?\n\n${list}\n\nEach is backed up to the stash first, then pip, an import check, a restart and health; a failure rolls that one back and the run goes on. Stores first, each node's Observatory last, Lodestar last of all.`)) return;
+    const go = document.getElementById('upg-go');
+    go.disabled = true;
+    upgFlash('starting the run…', 'info');
+    const out = await hostApi('/api/v1/upgrade', { method: 'POST', json: { only_behind: true, backup: true, reason: 'from the viewer' } });
+    if (!out || !out.ok) {
+        upgFlash(out?.error || 'Lodestar would not start it (is a run already going?)', 'err');
+        go.disabled = false;
+        return;
+    }
+    upgFlash(`run ${out.run.id} started: ${out.run.steps.length} step(s)`, 'ok');
+    _upgOpenRun = out.run.id;
+    await refreshUpgrades();
+}
+
+function renderRuns(status) {
+    const runs = status.runs || [];
+    document.getElementById('upg-runs-count').textContent = runs.length ? `${runs.length} kept` : '';
+    const cur = document.getElementById('upg-current');
+    if (status.busy && status.current) {
+        const r = status.current;
+        const done = r.steps.filter(s => !['pending', 'running'].includes(s.state)).length;
+        const now = r.steps.find(s => s.state === 'running');
+        cur.innerHTML = `<div class="upg-live">${upgBadge('running')} <b>${escapeHtml(r.id)}</b> · ${done}/${r.steps.length} steps`
+            + (now ? ` · now ${escapeHtml(now.node)}/${escapeHtml(now.service)}` : '') + ` · ${escapeHtml(r.reason || '')}</div>`;
+        if (!_upgOpenRun) _upgOpenRun = r.id;
+        if (_upgOpenRun === r.id) renderRunDetail(r);
+    } else {
+        cur.innerHTML = '';
+    }
+    const tb = document.querySelector('#upg-runs tbody');
+    if (!runs.length) { tb.innerHTML = '<tr><td class="upg-empty">none yet</td></tr>'; return; }
+    tb.innerHTML = '<tr><th>run</th><th>when</th><th></th><th>steps</th><th>why</th></tr>' + runs.map(r => {
+        const steps = r.steps || [];
+        const moved = steps.filter(s => s.state === 'done').length;
+        const bad = steps.filter(s => s.state === 'failed').length;
+        return `<tr class="upg-run${r.id === _upgOpenRun ? ' open' : ''}" data-run="${escapeHtml(r.id)}">`
+             + `<td class="mono">${escapeHtml(r.id)}</td><td>${fmtTime(r.created_at ? new Date(r.created_at * 1000).toISOString() : null)}</td>`
+             + `<td>${upgBadge(r.state)}</td><td>${moved} moved${bad ? `, ${bad} failed` : ''}${(r.held || []).length ? `, ${r.held.length} held` : ''} of ${steps.length}</td>`
+             + `<td>${upgCell(r.reason)}</td></tr>`;
+    }).join('');
+}
+
+async function openRun(id) {
+    _upgOpenRun = id;
+    const out = await hostApi(`/api/v1/upgrade/${encodeURIComponent(id)}`);
+    if (out && out.run) renderRunDetail(out.run);
+    if (_upgStatus) renderRuns(_upgStatus);
+}
+
+function renderRunDetail(run) {
+    const el = document.getElementById('upg-run-detail');
+    const rows = (run.steps || []).map(s => {
+        const ver = s.before && s.after && s.service
+            ? `${upgCell(Object.values(s.before)[0])} → ${upgCell(Object.values(s.after)[0])}` : upgCell(s.version);
+        const note = s.error || s.held || s.skipped || (s.state === 'current' ? `${upgCell(s.current)} already the newest` : '')
+                   || (s.job ? `job ${s.job}` : '');
+        return `<tr class="${s.state}"><td>${upgCell(s.node)}</td><td>${upgCell(s.service)}</td><td>${upgBadge(s.state)}</td>`
+             + `<td class="mono">${ver}</td><td>${escapeHtml(String(note || ''))}</td></tr>`;
+    });
+    el.innerHTML = `<div class="upg-detail-head"><b>${escapeHtml(run.id)}</b> ${upgBadge(run.state)}`
+        + (run.error ? ` <span class="upg-note bad">${escapeHtml(run.error)}</span>` : '')
+        + ` <button class="upg-link" id="upg-detail-close">close</button></div>`
+        + `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>node</th><th>service</th><th></th><th>version</th><th></th></tr>${rows.join('')}</tbody></table></div>`;
+    document.getElementById('upg-detail-close').addEventListener('click', () => {
+        _upgOpenRun = null; el.innerHTML = ''; if (_upgStatus) renderRuns(_upgStatus);
+    });
+}
+
+function initUpgrades() {
+    document.getElementById('upg-refresh').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        try { await refreshUpgrades(true); } finally { e.target.disabled = false; }
+    });
+    document.getElementById('upg-plan').addEventListener('click', planUpgrades);
+    document.getElementById('upg-go').addEventListener('click', startUpgrades);
+    document.getElementById('upg-runs').addEventListener('click', (e) => {
+        const row = e.target.closest('tr[data-run]');
+        if (row) openRun(row.dataset.run);
+    });
+    // The shell switches views; the first look at this one fetches.
+    document.querySelectorAll('.tab[data-tab="upgrades"]').forEach(b => b.addEventListener('click', () => refreshUpgrades()));
+}
+
+// ----------------------------------------------------------------------
 // MAIN
 // ----------------------------------------------------------------------
 initSettings();
 initModal();
+initUpgrades();
 refresh();
 startPolling(POLL_INTERVAL);

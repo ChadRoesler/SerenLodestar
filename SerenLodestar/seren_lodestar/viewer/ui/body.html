@@ -17,6 +17,40 @@
   </div>
 </div>
 
+<!-- Upgrades: what is behind the index, a dry run, a run, and the runs so far.
+     Everything here is /api/v1/upgrade (seren_lodestar.upgrade); the tab only
+     shows it. Filled by scripts.js (refreshUpgrades) when the tab is open. -->
+<div class="view" id="upgrades">
+  <div class="upg-bar">
+    <div class="upg-title">
+      <strong>Upgrades</strong>
+      <span class="upg-sub" id="upg-sub">each app on its own: release what changed, Lodestar moves what is behind</span>
+    </div>
+    <div class="upg-actions">
+      <button class="upg-btn" id="upg-refresh" title="ask the index again for every package's newest release">↻ check the index</button>
+      <button class="upg-btn" id="upg-plan" title="every node's dry run, in run order - nothing changes">plan</button>
+      <button class="upg-btn upg-go" id="upg-go" title="back up, upgrade and restart everything that is behind, stores first, Lodestar last">upgrade what's behind</button>
+    </div>
+  </div>
+  <div class="upg-flash" id="upg-flash" role="status" aria-live="polite"></div>
+  <div class="upg-cols">
+    <section class="upg-card">
+      <h3>Behind <span class="upg-count" id="upg-behind-count"></span></h3>
+      <div class="upg-table-wrap"><table class="upg-table" id="upg-behind"><tbody><tr><td class="upg-empty">loading…</td></tr></tbody></table></div>
+    </section>
+    <section class="upg-card" id="upg-plan-card" hidden>
+      <h3>Plan <span class="upg-count" id="upg-plan-sum"></span></h3>
+      <div id="upg-plan-body"></div>
+    </section>
+    <section class="upg-card">
+      <h3>Runs <span class="upg-count" id="upg-runs-count"></span></h3>
+      <div id="upg-current"></div>
+      <div class="upg-table-wrap"><table class="upg-table" id="upg-runs"><tbody><tr><td class="upg-empty">none yet</td></tr></tbody></table></div>
+      <div id="upg-run-detail"></div>
+    </section>
+  </div>
+</div>
+
 <!-- Settings modal — stripped to the broadcast agent-update action. The token
      now lives in the shell's 🔑 modal, and same-origin serving means there's
      no Lodestar-URL field to configure anymore. -->

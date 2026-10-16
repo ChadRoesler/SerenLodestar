@@ -726,3 +726,53 @@
     .modal-update-node-icon { font-size: 32px; }
     .modal-update-node-label { font-size: 13px; }
 }
+
+/* ---------------------------------------------------------------------
+*  UPGRADES TAB - what is behind, a plan, the runs. Same tokens as the grid.
+* --------------------------------------------------------------------- */
+.upg-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--gap); flex-wrap: wrap; margin-bottom: var(--gap); }
+.upg-title strong { font-size: 15px; color: var(--text-hi); }
+.upg-sub { display: block; font-size: 11px; color: var(--text-lo); margin-top: 2px; }
+.upg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.upg-btn {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-hi); font-family: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 7px 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+    .upg-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-row); }
+    .upg-btn:disabled { opacity: 0.4; cursor: default; }
+    .upg-btn.upg-go { border-color: var(--accent); color: var(--accent); }
+    .upg-btn.upg-go:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.upg-flash { display: none; padding: 7px 10px; border-radius: var(--radius); font-size: 12px; margin-bottom: var(--gap); }
+    .upg-flash.visible { display: block; }
+    .upg-flash.info { background: var(--bg-card); color: var(--text-mid); border: 1px solid var(--border); }
+    .upg-flash.ok { background: var(--status-ok); color: var(--bg-page); }
+    .upg-flash.err { background: var(--status-down); color: var(--bg-page); }
+.upg-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--gap); align-items: start; }
+.upg-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: calc(var(--pad)/2); min-width: 0; }
+    .upg-card h3 { margin: 0 0 8px; font-size: 13px; color: var(--text-hi); display: flex; justify-content: space-between; gap: 8px; }
+    .upg-count { font-size: 11px; color: var(--text-lo); font-weight: 400; }
+.upg-table-wrap { overflow-x: auto; }
+.upg-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .upg-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-lo); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+    .upg-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-mid); vertical-align: top; }
+    .upg-table tr:last-child td { border-bottom: 0; }
+    .upg-table td.mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--text-hi); white-space: nowrap; }
+    .upg-table tr.behind td:first-child, .upg-table tr.failed td:first-child { border-left: 2px solid var(--status-warn); }
+    .upg-table tr.failed td:first-child { border-left-color: var(--status-down); }
+    .upg-table td.upg-empty { color: var(--text-lo); font-style: italic; }
+    .upg-table tr.upg-run { cursor: pointer; }
+    .upg-table tr.upg-run:hover td { background: var(--bg-row); }
+    .upg-table tr.upg-run.open td { background: var(--bg-row); color: var(--text-hi); }
+.upg-state { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border: 1px solid var(--border); color: var(--text-mid); white-space: nowrap; }
+    .upg-state.ok { border-color: var(--status-ok); color: var(--status-ok); }
+    .upg-state.warn { border-color: var(--status-warn); color: var(--status-warn); }
+    .upg-state.bad { border-color: var(--status-down); color: var(--status-down); }
+    .upg-state.run { border-color: var(--accent); color: var(--accent); animation: upg-pulse 1.2s ease-in-out infinite; }
+    .upg-state.wait { opacity: 0.7; }
+@keyframes upg-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.upg-live { font-size: 12px; color: var(--text-mid); padding: 6px 0 10px; }
+.upg-note { font-size: 11px; color: var(--text-lo); margin-top: 8px; }
+    .upg-note.bad { color: var(--status-down); }
+.upg-detail-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; font-size: 12px; color: var(--text-hi); flex-wrap: wrap; }
+.upg-link { background: none; border: 0; color: var(--accent-info); cursor: pointer; font-size: 11px; font-family: inherit; margin-left: auto; }
