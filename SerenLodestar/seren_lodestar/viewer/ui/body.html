@@ -10,7 +10,14 @@
 
 <!-- The single dashboard view: node grid + capability-gaps strip. -->
 <div class="view active" id="cluster">
-  <div class="grid" id="grid"><!-- node cards + the actions card render here --></div>
+  <!-- On the glance screen the grid is one row; past --glance-max nodes it
+       pages, and the arrows do the paging because a resistive touchscreen
+       is not something you swipe (17 Oct 2026). Desktop: a plain block. -->
+  <div class="grid-row" id="grid-row">
+    <button class="glance-arrow glance-only" id="glance-prev" aria-label="previous nodes">‹</button>
+    <div class="grid" id="grid"><!-- node cards + the actions card render here --></div>
+    <button class="glance-arrow glance-only" id="glance-next" aria-label="next nodes">›</button>
+  </div>
   <div class="gaps" id="gaps" style="display:none;">
     <strong>Capability gaps</strong>
     <div class="gap-list" id="gap-list"></div>
@@ -69,6 +76,18 @@
     </div>
     <div class="settings-body">
       <button class="update-nodes-btn" id="cfg-open-upgrades">open the Upgrades tab</button>
+      <!-- Which nodes this browser's grid shows. A per-screen choice, kept in
+           localStorage, never in the yaml: the rack's glance screen hides the
+           desk it stands next to, the desk's browser sees everything. -->
+      <div class="cfg-screen">
+        <div class="cfg-screen-title">On this screen</div>
+        <div class="cfg-nodes" id="cfg-nodes"><span class="cfg-empty">no nodes yet</span></div>
+        <div class="hint">
+          Unticked nodes stay off this screen's grid, in this browser only, and come
+          back on their own while they are offline or carry something down. The LED
+          and the gaps strip count every node either way.
+        </div>
+      </div>
       <div class="hint">
         Set your bearer token via the <b>🔑</b> button in the header.
         <b>Upgrades</b> shows every seren service against the index's newest,

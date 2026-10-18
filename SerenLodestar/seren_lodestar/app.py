@@ -60,6 +60,8 @@ from .routes import services as services_routes
 from .routes import scheduler as scheduler_routes
 from .routes import chat as chat_routes
 from .routes import images as images_routes
+from .routes import hearing as hearing_routes
+from .routes import listening as listening_routes
 from .routes import gallery as gallery_routes
 from .routes import agent_update as agent_update_routes
 from .routes import backup as backup_routes
@@ -324,6 +326,8 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
     app.include_router(upgrade_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(images_routes.router)
+    app.include_router(hearing_routes.router)
+    app.include_router(listening_routes.router)
     app.include_router(gallery_routes.router)
     app.include_router(agent_update_routes.router)
 

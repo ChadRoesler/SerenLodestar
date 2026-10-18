@@ -477,6 +477,47 @@ class JetsonAgentClient:
         except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
             return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
 
+    async def transcribe_async(self, data: bytes, filename: str, language: str = "",
+                               timeout: float = 120.0) -> tuple[int, Any]:
+        """The node's whisper (/api/v1/service/whisper/transcribe): the clip
+        as multipart, (status, JSON) back. Never raises; 0 means the node did
+        not answer, with why in the body."""
+        try:
+            fields = {"timeout_seconds": str(timeout)}
+            if language:
+                fields["language"] = language
+            resp = await self._client.post("api/v1/service/whisper/transcribe",
+                                           files={"file": (filename, data, "audio/wav")}, data=fields,
+                                           timeout=timeout + 15)
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {"error": resp.text[:500]}
+            return resp.status_code, body
+        except httpx.TimeoutException:
+            return 0, {"error": f"{self._node_name} did not answer in {timeout:.0f}s"}
+        except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
+            return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
+
+    async def listen_async(self, files: dict[str, tuple[str, bytes, str]], prompt: str = "", mode: str = "listen",
+                           max_new_tokens: int = 400, timeout: float = 240.0) -> tuple[int, Any]:
+        """The node's listener (/api/v1/service/listener/{listen|compare}):
+        the clip(s) as multipart and the question, (status, JSON) back.
+        Never raises; 0 means the node did not answer, with why in the body."""
+        try:
+            fields = {"prompt": prompt or "", "max_new_tokens": str(int(max_new_tokens)), "timeout_seconds": str(timeout)}
+            resp = await self._client.post(f"api/v1/service/listener/{'compare' if mode == 'compare' else 'listen'}",
+                                           files=files, data=fields, timeout=timeout + 15)
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {"error": resp.text[:500]}
+            return resp.status_code, body
+        except httpx.TimeoutException:
+            return 0, {"error": f"{self._node_name} did not answer in {timeout:.0f}s"}
+        except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
+            return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
+
     async def relay_json_async(self, path: str, timeout: float = 35.0) -> tuple[int, Any]:
         """A GET relayed through the node's Observatory: (status, JSON).
         Never raises; 0 means the node did not answer, with why in the

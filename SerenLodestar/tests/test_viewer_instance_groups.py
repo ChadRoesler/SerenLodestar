@@ -40,7 +40,7 @@ def test_the_card_groups_collapsed_by_default_and_remembers_what_was_opened():
     assert "function groupServices" in script and "function instanceOf" in script
     node = script[script.index("function renderNode"):script.index("function renderGrid")]
     assert "groupServices(node.installed_services)" in node
-    assert "'⏵'" in node and "'⏷'" in node, "a caret says which way the group is"
+    assert "'▸'" in node and "'▾'" in node, "a caret says which way the group is (Geometric Shapes: every kiosk font has them)"
     assert "expandedGroups.has(`${node.name}/${g.instance}`)" in node, "open state is per node and instance"
     assert "const expandedGroups = new Set()" in script, "...and survives the poll's re-render"
     assert "svcRow(s.name, s.app, 'svc-in-group')" in node, "inside a group a service is shown as its app"

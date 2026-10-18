@@ -20,6 +20,35 @@ const POLL_INTERVAL = 5000;   // ms
 const TEMP_HOT_C = 75;        // pulse temperature reading at this threshold
 const TEMP_DANGER_C = 85;     // pulse whole node header at this threshold
 
+// Which nodes THIS browser keeps off its grid (settings, "On this screen").
+// A per-screen choice, so it lives in localStorage and nowhere else: the
+// rack's glance screen hides the desk beside it, the desk sees everything.
+// A hidden node still counts for the LED and the gaps strip, and comes back
+// on its own while it needs someone (offline, or a service down).
+const HIDDEN_NODES_KEY = 'lodestar.hiddenNodes';
+const GLANCE_MAX = 5;   // cards across the glance row at 1424px before it pages
+
+function loadHiddenNodes() {
+    try {
+        const raw = localStorage.getItem(HIDDEN_NODES_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(arr) ? arr.filter(n => typeof n === 'string') : []);
+    } catch (_) { return new Set(); }
+}
+
+function saveHiddenNodes(set) {
+    try { localStorage.setItem(HIDDEN_NODES_KEY, JSON.stringify([...set])); } catch (_) { /* private window, blocked storage */ }
+}
+
+function nodeNeedsYou(node) {
+    if (!node.online) return true;
+    return Object.values(node.services || {}).some(s => symbolFor(s?.status)[1] === 'down');
+}
+
+function nodeShownHere(node, hidden) {
+    return !hidden.has(node.name) || nodeNeedsYou(node);
+}
+
 // ----------------------------------------------------------------------
 // API CLIENT — same-origin fetch wrapper, bearer from the shell's getToken().
 // Returns parsed JSON, or null on failure (and banner-displays the reason).
@@ -823,10 +852,12 @@ function renderNode(node) {
                 if (st?.memory_mb != null) { total += st.memory_mb; hasMem = true; }
             }
             const open = expandedGroups.has(`${node.name}/${g.instance}`);
+            // ▸/▾ (Geometric Shapes) and not ⏵/⏷ (Misc Technical): a Linux kiosk with
+            // DejaVu and Noto Emoji has the first pair and draws the second as a hex box.
             list.innerHTML += `
                     <div class="svc-name svc-group" data-node="${escapeHtml(node.name)}" data-instance="${escapeHtml(g.instance)}"
                          title="${g.services.length} services of the ${escapeHtml(g.instance)} instance">
-                      <span class="svc-caret">${open ? '⏷' : '⏵'}</span>${escapeHtml(g.label)}
+                      <span class="svc-caret">${open ? '▾' : '▸'}</span>${escapeHtml(g.label)}
                       <span class="svc-count">${g.services.length}</span></div>
                     <div class="svc-mem">${hasMem ? fmtBytes(total) : '-'}</div>
                     <div class="svc-stat ${worstCls}">${worstSym}</div>
@@ -919,11 +950,59 @@ async function refresh() {
 
 function renderGrid(status) {
     const grid = document.getElementById('grid');
+    const hidden = loadHiddenNodes();
     grid.innerHTML = '';
+    let shown = 0;
     for (const node of (status.nodes || [])) {
+        if (!nodeShownHere(node, hidden)) continue;
         grid.appendChild(renderNode(node));
+        shown += 1;
     }
     grid.appendChild(renderActionsCard());
+    // The glance row is as wide as it has nodes, up to GLANCE_MAX; past that
+    // it pages and the arrows show. Decided from the count, not measured, so
+    // the arrows never flicker in and out as the row re-lays itself.
+    grid.style.setProperty('--glance-cols', String(Math.min(Math.max(shown, 1), GLANCE_MAX)));
+    document.getElementById('grid-row').classList.toggle('paged', shown > GLANCE_MAX);
+    updateGlanceArrows();
+}
+
+// Paging the glance row: one card per tap, arrows dim at the ends.
+function glanceStep() {
+    const first = document.querySelector('#grid > .node');
+    return first ? first.getBoundingClientRect().width + 10 : 300;
+}
+
+function updateGlanceArrows() {
+    const grid = document.getElementById('grid');
+    const prev = document.getElementById('glance-prev');
+    const next = document.getElementById('glance-next');
+    if (!prev || !next) return;
+    prev.disabled = grid.scrollLeft <= 1;
+    next.disabled = grid.scrollLeft + grid.clientWidth >= grid.scrollWidth - 1;
+}
+
+function initGlance() {
+    const grid = document.getElementById('grid');
+    const prev = document.getElementById('glance-prev');
+    const next = document.getElementById('glance-next');
+    if (!prev || !next) return;
+    prev.addEventListener('click', () => grid.scrollBy({ left: -glanceStep(), behavior: 'smooth' }));
+    next.addEventListener('click', () => grid.scrollBy({ left: glanceStep(), behavior: 'smooth' }));
+    grid.addEventListener('scroll', updateGlanceArrows, { passive: true });
+    window.addEventListener('resize', updateGlanceArrows);
+}
+
+// Force eager rediscovery, then re-read. Shared by the actions card and the
+// header-strip button the glance screen uses instead of it.
+async function eagerRefresh(btn) {
+    btn.disabled = true;
+    try {
+        await hostApi('/api/v1/cluster/refresh', { method: 'POST' });
+        await refresh();
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 function renderActionsCard() {
@@ -941,15 +1020,7 @@ function renderActionsCard() {
     refreshBtn.id = 'actions-refresh';
     refreshBtn.title = 'Force eager rediscovery';
     refreshBtn.innerHTML = '<span class="actions-icon">↻</span><span class="actions-label">refresh</span>';
-    refreshBtn.addEventListener('click', async () => {
-        refreshBtn.disabled = true;
-        try {
-            await hostApi('/api/v1/cluster/refresh', { method: 'POST' });
-            await refresh();
-        } finally {
-            refreshBtn.disabled = false;
-        }
-    });
+    refreshBtn.addEventListener('click', () => eagerRefresh(refreshBtn));
 
     actions.appendChild(settingsBtn);
     actions.appendChild(refreshBtn);
@@ -1063,9 +1134,47 @@ function initSettings() {
         showTab('upgrades');
         refreshUpgrades();
     });
+
+    // The header-strip twins of the actions card (glance screen only).
+    const asideSettings = document.getElementById('aside-settings');
+    if (asideSettings) asideSettings.addEventListener('click', openSettingsModal);
+    const asideRefresh = document.getElementById('aside-refresh');
+    if (asideRefresh) asideRefresh.addEventListener('click', () => eagerRefresh(asideRefresh));
+}
+
+// "On this screen": one tick box per node the cluster knows, from the last
+// payload. Unticking hides the node from this browser's grid at once; the
+// LED, the gaps strip and every other browser are untouched.
+function renderScreenNodes() {
+    const box = document.getElementById('cfg-nodes');
+    const nodes = window._lastStatus?.nodes || [];
+    if (!nodes.length) { box.innerHTML = '<span class="cfg-empty">no nodes yet</span>'; return; }
+    const hidden = loadHiddenNodes();
+    box.innerHTML = '';
+    for (const node of nodes) {
+        const label = document.createElement('label');
+        const off = hidden.has(node.name);
+        const needs = off && nodeNeedsYou(node);
+        label.className = (off ? 'off' : '') + (needs ? ' needs' : '');
+        label.title = needs ? 'hidden here, but shown while it needs you' : '';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !off;
+        cb.addEventListener('change', () => {
+            const set = loadHiddenNodes();
+            if (cb.checked) set.delete(node.name); else set.add(node.name);
+            saveHiddenNodes(set);
+            renderScreenNodes();
+            if (window._lastStatus) renderGrid(window._lastStatus);
+        });
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(node.nickname?.trim() || node.name));
+        box.appendChild(label);
+    }
 }
 
 function openSettingsModal() {
+    renderScreenNodes();
     document.getElementById('settings-backdrop').classList.add('visible');
 }
 
@@ -1288,5 +1397,6 @@ function initUpgrades() {
 initSettings();
 initModal();
 initUpgrades();
+initGlance();
 refresh();
 startPolling(POLL_INTERVAL);

@@ -164,7 +164,7 @@ network stops being trusted.
 |---|---|
 | `GET /` | service info + update status |
 | `GET /health` | liveness |
-| `GET /viewer` | the operator dashboard |
+| `GET /viewer` | the operator dashboard (on a short screen, a glance row: see below) |
 | `GET /api/v1/system/ping` | public — no token |
 | `GET /api/v1/system/version` | public — no token |
 | `GET /api/v1/system/status` | per-node status |
@@ -192,12 +192,30 @@ network stops being trusted.
 | `DELETE /api/v1/scheduler/tasks/{name}` | remove |
 | `POST /api/v1/scheduler/tasks/{name}/pause` | pause |
 | `POST /api/v1/scheduler/tasks/{name}/resume` | resume |
+| `POST /api/v1/image` | draw a picture: wakes ComfyUI on a node that can, holds it, lets go |
+| `POST /api/v1/hear` | words from a clip (multipart `file`, a WAV): wakes whisper, holds it, lets go |
+| `POST /api/v1/listen` | words about a sound (multipart `file` + `prompt`): wakes the listener, an audio-language model, holds it, lets go |
+| `POST /api/v1/listen/compare` | the same about two clips (`a`, `b`): how they differ |
 | `POST /api/v1/chat` | inference with tools |
 | `POST /api/v1/chat/stream` | the same, streamed |
 | `POST /api/v1/chat/inspect` | what got injected, for debugging |
 | `GET /api/v1/chat/health` | is the backend up |
 | `GET /api/v1/chat/last_user_at` | last human activity |
 | `/mcp/` | MCP streamable-HTTP transport |
+
+### The glance screen
+
+The viewer has a second layout for a short viewport (under 400px tall, the
+1U touchscreen on a rack): thin header and tabs, and the node grid becomes one
+horizontal row, as wide as it has nodes up to five across. Past five it pages,
+one card per tap on the arrows at its ends (a resistive touchscreen is not
+something you swipe). Nothing is squeezed to fit. The actions card goes and
+settings/refresh move into the header strip. Which nodes sit on that row is
+the screen's own choice: **settings → On this screen** ticks nodes on and off
+for that browser only (localStorage, never the yaml), and a node ticked off
+comes back by itself while it is offline or has a service down, so the glance
+never hides something that needs you. The LED and the gaps strip count every
+node regardless.
 
 ## Auth
 

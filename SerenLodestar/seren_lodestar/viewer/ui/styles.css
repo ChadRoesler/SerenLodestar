@@ -75,6 +75,18 @@
 #led-text { color: var(--text-lo); font-size: 12px; }
 #last-refresh { color: var(--text-lo); font-size: 12px; }
 
+/* Header-strip buttons: settings + refresh for the glance screen, where the
+   actions card has no room. Hidden everywhere else (.glance-only); the
+   short-viewport block below turns them on. */
+.aside-btn {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--accent); font-size: 18px; line-height: 1; padding: 0; width: 36px; height: 36px;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+    .aside-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-row); }
+    .aside-btn:disabled { opacity: 0.4; cursor: default; }
+.glance-only { display: none; }
+
 /* Big LED - single rollup status indicator. */
 .led {
     display: inline-block;
@@ -283,6 +295,17 @@
     .settings-body .update-result.err { color: var(--status-down); }
 
 .settings-body .hint { color: var(--text-lo); font-size: 11px; line-height: 1.5; }
+.cfg-screen-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-lo); margin-bottom: 6px; }
+.cfg-nodes { display: flex; flex-wrap: wrap; gap: 8px; }
+    .cfg-nodes label {
+        display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+        color: var(--text-hi); font-size: 13px; cursor: pointer; user-select: none;
+    }
+    .cfg-nodes label.off { color: var(--text-lo); }
+    .cfg-nodes label.needs { border-color: var(--status-down); }
+    .cfg-nodes input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+    .cfg-nodes .cfg-empty { color: var(--text-lo); font-style: italic; font-size: 12px; }
 .settings-body .hint code {
     background: var(--bg-page);
     border: 1px solid var(--border);
@@ -710,8 +733,86 @@
 
 /* ---------------------------------------------------------------------
 * TOUCHSCREEN / SHORT-VIEWPORT OVERRIDES (1424×280 GeeekPi letterbox)
+*
+* The glance layout (17 Oct 2026). 280px tall is a letterbox: the shell's
+* header and tabbar alone eat 110 of them at desktop sizes, and a wrapped
+* grid row simply does not exist. So on a short viewport:
+*   - the shell chrome shrinks: thin header (no subtitle), thin tabs, no
+*     1100px cap on the views, small paddings;
+*   - the node grid becomes ONE horizontal row, as many cards wide as there
+*     are nodes up to --glance-max (five at 1424px); past that it pages, and
+*     the arrows at the ends page it, because a resistive touchscreen does
+*     not swipe well. Nothing is squeezed into mush to fit;
+*   - the cards go dense: no ip line, smaller rows, footer on one line;
+*   - the actions card is gone, settings and refresh move to the header strip.
+* Which nodes sit on the row is this browser's choice (settings, "On this
+* screen", localStorage): a hidden node comes back by itself while it is
+* offline or has something down, so the glance never lies.
 * --------------------------------------------------------------------- */
 @media (max-height: 400px) {
+    :root { --glance-cols: 4; --gap: 10px; }   /* --glance-cols is set per render by scripts.js */
+    header.seren-head { padding: 6px 14px; gap: 10px; }
+    .seren-head .brand { font-size: 1rem; }
+    .seren-head .subtitle { display: none; }
+    .tabbar { padding: 0 14px; }
+    .tabbar .tab { padding: 5px 12px; font-size: .8rem; }
+    #views { max-width: none; }
+    .view { padding: 8px 12px; }
+    .glance-only { display: inline-flex; align-items: center; justify-content: center; }
+    .actions-card { display: none; }
+
+    .grid-row { display: flex; gap: 6px; align-items: stretch; }
+    .grid-row .glance-arrow { display: none; }
+    .grid-row.paged .glance-arrow { display: flex; }
+    .glance-arrow {
+        flex: 0 0 44px; align-items: center; justify-content: center;
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+        color: var(--accent); font-size: 28px; line-height: 1; padding: 0; cursor: pointer;
+    }
+        .glance-arrow:disabled { opacity: 0.25; cursor: default; }
+    .grid {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+    .grid::-webkit-scrollbar { display: none; }
+    .grid > .node {
+        flex: 0 0 calc((100% - (var(--glance-cols) - 1) * var(--gap)) / var(--glance-cols));
+        scroll-snap-align: start;
+        min-height: 0;
+        max-height: calc(100vh - 96px);
+        padding: 8px 10px;
+    }
+    .node-name { font-size: 14px; margin-bottom: 4px; }
+    .node-ip { display: none; }
+    /* overflow-y alone makes overflow-x auto too, and the ◯ glyph is a hair
+       wider than its 1em column: that was a horizontal scrollbar on every
+       card with a stopped service. Let the column fit the glyph. */
+    .svc-list { font-size: 12px; gap: 2px 10px; margin-bottom: 6px; overflow-y: auto; overflow-x: hidden; }
+    .svc-list .svc-stat { width: auto; min-width: 1em; }
+    .svc-list .svc-empty { padding: 8px 0; }
+    .node-footer { flex-direction: row; justify-content: space-between; gap: 12px; padding-top: 5px; font-size: 11px; }
+    .node-footer .row { gap: 6px; }
+    /* An instance group does not fold or unfold here: the whole card is the
+       button and the node modal has every service. No caret, no count, and
+       the row lets the tap through to the card. */
+    .svc-list .svc-caret, .svc-list .svc-count { display: none; }
+    /* The service-type badge is an emoji, and a kiosk box without an emoji
+       font draws it as a hex box at the head of every row. The modal says
+       the type in words; the glance row says the name and the light. */
+    .svc-list .svc-badge { display: none; }
+    .svc-list .svc-group { pointer-events: none; font-weight: 400; }
+    /* The gaps strip is a paragraph; on a letterbox the LED says it. The
+       !important is for the inline display the script sets when there are gaps. */
+    .gaps { display: none !important; }
+
+    .settings-modal { max-height: 95vh; }
+    .settings-body { overflow-y: auto; gap: 10px; }
     .modal { height: 95vh; width: 98vw; }
     .modal-header { min-height: 48px; padding: 8px var(--pad); }
     .modal-header-value { font-size: 15px; }
