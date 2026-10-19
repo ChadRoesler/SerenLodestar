@@ -196,6 +196,8 @@ network stops being trusted.
 | `POST /api/v1/hear` | words from a clip (multipart `file`, a WAV): wakes whisper, holds it, lets go |
 | `POST /api/v1/listen` | words about a sound (multipart `file` + `prompt`): wakes the listener, an audio-language model, holds it, lets go |
 | `POST /api/v1/listen/compare` | the same about two clips (`a`, `b`): how they differ |
+| `POST /api/v1/speak` | words said in a voice (JSON `{text, voice}`): wakes the speaker on the node that has one, holds it, lets go; the WAV is the body, the node and timings are `X-Seren-*` headers. A voice card that `needs` another service on that box (a big model behind its own server) has it woken and let go alongside, `X-Seren-Needs` says which |
+| `GET /api/v1/speak/voices` | the voices the speaker has |
 | `POST /api/v1/chat` | inference with tools |
 | `POST /api/v1/chat/stream` | the same, streamed |
 | `POST /api/v1/chat/inspect` | what got injected, for debugging |

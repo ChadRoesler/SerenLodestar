@@ -518,6 +518,27 @@ class JetsonAgentClient:
         except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
             return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}
 
+    async def speak_async(self, text: str, voice: str = "wren",
+                          timeout: float = 180.0) -> tuple[int, Any, dict[str, str]]:
+        """The node's speaker (/api/v1/service/speaker/speak): the words and
+        the voice, (status, WAV bytes, headers) back - or (status, JSON, {})
+        when it could not. Never raises; 0 means the node did not answer."""
+        try:
+            resp = await self._client.post("api/v1/service/speaker/speak",
+                                           json={"text": text, "voice": voice, "timeout_seconds": timeout},
+                                           timeout=timeout + 15)
+            if resp.status_code == 200 and resp.content.startswith(b"RIFF"):
+                return 200, resp.content, dict(resp.headers)
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {"error": resp.text[:500]}
+            return resp.status_code, body, {}
+        except httpx.TimeoutException:
+            return 0, {"error": f"{self._node_name} did not answer in {timeout:.0f}s"}, {}
+        except Exception as ex:  # noqa: BLE001 - a node that cannot be reached is an answer, not a crash
+            return 0, {"error": f"{self._node_name}: {type(ex).__name__}: {ex}"}, {}
+
     async def relay_json_async(self, path: str, timeout: float = 35.0) -> tuple[int, Any]:
         """A GET relayed through the node's Observatory: (status, JSON).
         Never raises; 0 means the node did not answer, with why in the
