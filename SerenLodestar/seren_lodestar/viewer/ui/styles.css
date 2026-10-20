@@ -19,8 +19,10 @@
     --bg-row: #29326D;           /* interactive rows, headers */
     --bg-row-selected: #131732;
     --bg-overlay: #0B1026E6;     /* modal backdrop dim */
-    /* Borders - subtle hairlines, brighter on hover/focus */
-    --border: #1E2A78;           /* card edges, dividers */
+    /* Borders: the card edges and dividers are the shell's --border, the
+       same hairline every viewer draws (Chad, 20 Oct 2026: "border should
+       go back to the same border color used across all things"); the
+       electric #1E2A78 this leaf used to set is gone. Hover/focus is gold. */
     --border-hi: #C9A227;        /* gold hover/focus ring (was purple) */
     /* Text - light on dark, three tiers of emphasis */
     --text-hi: #E6F0FF;
@@ -72,20 +74,20 @@
 *  bar itself; these are the widgets slotted into its right side).
 * --------------------------------------------------------------------- */
 #led-overall { display: inline-flex; align-items: center; }
-#led-text { color: var(--text-lo); font-size: 12px; }
+    #led-overall.hot { color: var(--accent); border-color: var(--accent); }
+    #led-overall.bad { color: var(--status-down); border-color: var(--status-down); }
+#led-text { font-size: 12px; }
 #last-refresh { color: var(--text-lo); font-size: 12px; }
 
 /* Header-strip buttons: settings + refresh for the glance screen, where the
    actions card has no room. Hidden everywhere else (.glance-only); the
    short-viewport block below turns them on. */
-.aside-btn {
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-    color: var(--accent); font-size: 18px; line-height: 1; padding: 0; width: 36px; height: 36px;
-    cursor: pointer; transition: border-color 0.15s, background 0.15s;
-}
-    .aside-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-row); }
-    .aside-btn:disabled { opacity: 0.4; cursor: default; }
-.glance-only { display: none; }
+/* Both header buttons are glance only; the glance block below makes them
+   36px squares. Hidden here with the shell's own specificity
+   (header.seren-head button sets display, so a bare .glance-only could
+   not win: the gear showed on every desk for an hour on 20 Oct 2026). */
+.aside-btn:disabled { opacity: 0.4; cursor: default; }
+.glance-only, header.seren-head .glance-only { display: none; }   /* the grid's paging arrows too (they came back when this was header-only, 20 Oct 2026) */
 
 /* Big LED - single rollup status indicator. */
 .led {
@@ -214,6 +216,19 @@
 .svc-stat.ok { color: var(--status-ok); }
 .svc-stat.warn { color: var(--status-warn); }
 .svc-stat.down { color: var(--status-down); }
+.svc-stat.idle { color: var(--text-lo); }
+
+    /* An owner folds what it owns, the way an instance group does; the
+       family indents one step per depth. */
+    .svc-list .svc-owner { cursor: pointer; user-select: none; }
+        .svc-list .svc-owner .svc-caret { display: inline-block; width: 1.1em; color: var(--text-mid); }
+        .svc-list .svc-owner .svc-count { color: var(--text-lo); font-weight: 400; margin-left: 0.5em; font-size: 0.85em; }
+        .svc-list .svc-owner:hover { color: var(--text-hi); }
+    .svc-list .svc-name.depth-2 { padding-left: 2.6em; }
+    .svc-list .svc-name.depth-3 { padding-left: 3.9em; }
+    /* "limit shown before scroll": the list scrolls past --svc-rows rows
+       instead of the card growing (a row is one line plus the 4px gap). */
+    .svc-list.capped { overflow-y: auto; overflow-x: hidden; max-height: calc(var(--svc-rows, 8) * (1.5em + 4px)); }
 
 .svc-list .svc-empty {
     grid-column: 1 / -1;
@@ -262,7 +277,11 @@
 /* ---------------------------------------------------------------------
 *  SETTINGS MODAL
 * --------------------------------------------------------------------- */
-.settings-modal { width: min(560px, 95vw); height: auto; max-height: 90vh; }
+/* .modal.settings-modal, two classes: the plain .settings-modal lost to .modal
+   below it (same specificity, later wins) and the settings came up the size
+   of the node modal, a 1100x650 box around four lines. Chad, 20 Oct 2026:
+   "the modal is large on desktop so maybe shrink it". */
+.modal.settings-modal { width: min(560px, 95vw); height: auto; max-height: 90vh; }
 
 .settings-body {
     padding: var(--pad);
@@ -296,6 +315,14 @@
 
 .settings-body .hint { color: var(--text-lo); font-size: 11px; line-height: 1.5; }
 .cfg-screen-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-lo); margin-bottom: 6px; }
+.cfg-folds { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--text-hi); }
+    .cfg-folds label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .cfg-folds input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+    .cfg-folds input[type="number"] {
+        width: 64px; background: var(--bg-page); border: 1px solid var(--border); border-radius: var(--radius);
+        color: var(--text-hi); padding: 4px 6px; font: inherit;
+    }
+    .cfg-folds .cfg-dim { color: var(--text-lo); font-size: 11px; }
 .cfg-nodes { display: flex; flex-wrap: wrap; gap: 8px; }
     .cfg-nodes label {
         display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
@@ -467,6 +494,13 @@
         .modal-svc-row .state.loading { color: var(--status-warn); }
         .modal-svc-row .state.down { color: var(--status-down); }
         .modal-svc-row .state.library { color: var(--status-lib); }
+        .modal-svc-row .state.idle { color: var(--text-lo); }
+    /* The family in the modal: a child sits under its owner, one step in. */
+    .modal-svc-row.depth-1 .name { padding-left: 1.4em; color: var(--text-mid); }
+    .modal-svc-row.depth-2 .name { padding-left: 2.8em; color: var(--text-mid); }
+    .modal-svc-row.container { cursor: default; }
+        .modal-svc-row.container:hover { background: transparent; }
+    .modal-svc-row .name .svc-count { color: var(--text-lo); font-weight: 400; margin-left: 0.5em; font-size: 0.85em; }
 
 .modal-scroll {
     border-left: 1px solid var(--border);
@@ -667,6 +701,7 @@
     .svc-stat-value.state.loading { color: var(--status-warn); }
     .svc-stat-value.state.down { color: var(--status-down); }
     .svc-stat-value.state.library { color: var(--text-mid); }
+    .svc-stat-value.state.idle { color: var(--text-lo); }
 
 .svc-drill-logs-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .svc-drill-logs-header {
@@ -758,7 +793,14 @@
     .tabbar .tab { padding: 5px 12px; font-size: .8rem; }
     #views { max-width: none; }
     .view { padding: 8px 12px; }
-    .glance-only { display: inline-flex; align-items: center; justify-content: center; }
+    header.seren-head .glance-only { display: inline-flex; }
+    /* Big dumb hands on a resistive touchscreen: the header buttons are
+       36px squares here, over the shell's 34px parity rule. */
+    header.seren-head .aside-btn {
+        width: 36px; height: 36px; min-width: 36px; padding: 0; font-size: 18px; line-height: 1;
+        background: var(--bg-card); color: var(--accent); border-radius: var(--radius);
+    }
+        header.seren-head .aside-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-row); }
     .actions-card { display: none; }
 
     .grid-row { display: flex; gap: 6px; align-items: stretch; }
@@ -802,6 +844,7 @@
        button and the node modal has every service. No caret, no count, and
        the row lets the tap through to the card. */
     .svc-list .svc-caret, .svc-list .svc-count { display: none; }
+    .svc-list .svc-owner { pointer-events: none; font-weight: 400; }
     /* The service-type badge is an emoji, and a kiosk box without an emoji
        font draws it as a hex box at the head of every row. The modal says
        the type in words; the glance row says the name and the light. */
@@ -811,7 +854,7 @@
        !important is for the inline display the script sets when there are gaps. */
     .gaps { display: none !important; }
 
-    .settings-modal { max-height: 95vh; }
+    .modal.settings-modal { max-height: 95vh; }
     .settings-body { overflow-y: auto; gap: 10px; }
     .modal { height: 95vh; width: 98vw; }
     .modal-header { min-height: 48px; padding: 8px var(--pad); }
@@ -829,6 +872,8 @@
     .modal-svc-header { padding: 6px var(--pad); font-size: 10px; }
     .modal-scroll-btn { flex-basis: 56px; font-size: 20px; }
     .modal-body { grid-template-columns: 1fr 56px 220px; }
+    .run-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .run-steps, .run-log { padding: 8px var(--pad); }
     .modal-reboot-icon { font-size: 36px; }
     .modal-reboot-label { font-size: 13px; }
     .modal-update-node-icon { font-size: 32px; }
@@ -882,5 +927,29 @@
 .upg-live { font-size: 12px; color: var(--text-mid); padding: 6px 0 10px; }
 .upg-note { font-size: 11px; color: var(--text-lo); margin-top: 8px; }
     .upg-note.bad { color: var(--status-down); }
-.upg-detail-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; font-size: 12px; color: var(--text-hi); flex-wrap: wrap; }
-.upg-link { background: none; border: 0; color: var(--accent-info); cursor: pointer; font-size: 11px; font-family: inherit; margin-left: auto; }
+.upg-link { background: none; border: 0; color: var(--accent-info); cursor: pointer; font-size: 11px; font-family: inherit; margin-left: 6px; }
+
+/* ---------------------------------------------------------------------
+*  RUN MODAL - one upgrade run: the steps, and a step's job notes from the
+*  node beside them (20 Oct 2026). Same shell as the node modal.
+* --------------------------------------------------------------------- */
+.run-modal .modal-header-value .upg-state { vertical-align: middle; }
+.run-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
+.run-steps { overflow: auto; padding: var(--pad); border-right: 1px solid var(--border); min-width: 0; }
+    .run-steps .upg-table tr.upg-step { cursor: pointer; }
+    .run-steps .upg-table tr.upg-step:hover td { background: var(--bg-row); }
+    .run-steps .upg-table tr.upg-step.open td { background: var(--bg-row); color: var(--text-hi); }
+.run-log {
+    overflow: auto; padding: var(--pad); background: var(--bg-page); min-width: 0;
+    font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--text-mid);
+}
+    .run-log-empty, .run-log-note { color: var(--text-lo); font-style: italic; font-family: inherit; }
+    .run-log-head { font-family: var(--font, inherit); font-size: 13px; color: var(--text-hi); margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .run-log-line { white-space: pre-wrap; word-break: break-word; }
+        .run-log-line.ok { color: var(--status-ok); }
+        .run-log-line.bad { color: var(--status-down); }
+    .run-log-dim { color: var(--text-lo); margin-right: 6px; }
+    .run-log-key { color: var(--text-lo); font-size: 11px; margin: 4px 0 0 1.5em; }
+    .run-log-kv { margin-left: 1.5em; white-space: pre-wrap; word-break: break-word; }
+        .run-log-kv .run-log-key { display: inline; margin: 0 4px 0 0; }
+    .run-log-pre { margin: 2px 0 6px 1.5em; padding: 6px 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; white-space: pre-wrap; word-break: break-word; font: inherit; }

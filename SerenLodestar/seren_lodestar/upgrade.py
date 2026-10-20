@@ -476,6 +476,19 @@ class UpgradeService:
         job = await self.follow(agent, job["id"])
         self._close_step(run, step, job)
 
+    async def job_of(self, step: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """A step's job as its node has it now, or None (no job, no client
+        for the node, or the Observatory did not answer)."""
+        if not step.get("job"):
+            return None
+        agent = self._cluster.get_agent(step.get("node"))
+        if agent is None:
+            return None
+        try:
+            return await agent.get_upgrade_job_async(step["job"])
+        except Exception:
+            return None
+
     async def follow(self, agent: Any, job_id: str) -> dict[str, Any]:
         """The job, polled until it ends. An Observatory that does not answer
         is restarting (its own upgrade) or busy: keep asking until the time

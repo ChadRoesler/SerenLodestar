@@ -39,19 +39,20 @@ def test_the_card_groups_collapsed_by_default_and_remembers_what_was_opened():
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     assert "function groupServices" in script and "function instanceOf" in script
     node = script[script.index("function renderNode"):script.index("function renderGrid")]
-    assert "groupServices(node.installed_services)" in node
+    assert "serviceTree(node, { hideObservatory: false })" in node, "the card draws the tree: groups, owners, what they own"
     assert "'▸'" in node and "'▾'" in node, "a caret says which way the group is (Geometric Shapes: every kiosk font has them)"
-    assert "expandedGroups.has(`${node.name}/${g.instance}`)" in node, "open state is per node and instance"
-    assert "const expandedGroups = new Set()" in script, "...and survives the poll's re-render"
-    assert "svcRow(s.name, s.app, 'svc-in-group')" in node, "inside a group a service is shown as its app"
-    assert "STATUS_RANK[cls]" in node and "total += st.memory_mb" in node, "a collapsed group carries the worst status and the summed memory"
-    toggle = script[script.index("function toggleGroup"):script.index("// RENDER")]
+    assert "foldOpen(key, !!screen.expandInstances)" in node, "open state is per node and instance, against this screen's default"
+    assert "const toggledFolds = new Set()" in script, "...and survives the poll's re-render"
+    assert "svcRow(r, 1)" in node and "instanceOf(k)?.app || k" in script, "inside a group a service is shown as its app"
+    assert "rollup(g.rows)" in node and "STATUS_RANK[cls]" in script and "total += r.status.memory_mb" in script, \
+        "a collapsed group carries the worst status and the summed memory"
+    toggle = script[script.index("function toggleFold"):script.index("// RENDER")]
     assert "window._lastStatus" in toggle, "a toggle re-renders from the last payload, not a new fetch"
 
 
 def test_the_styles_exist_for_the_group_row_and_its_members():
     css = (UI / "styles.css").read_text(encoding="utf-8")
-    for cls in (".svc-group", ".svc-caret", ".svc-count", ".svc-in-group"):
+    for cls in (".svc-group", ".svc-caret", ".svc-count", ".svc-in-group", ".svc-owner", ".svc-list.capped"):
         assert cls in css, cls
 
 

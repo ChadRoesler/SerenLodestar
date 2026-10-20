@@ -28,14 +28,15 @@ def test_the_tab_and_its_view_exist():
     # own. Without onclick the tab was a tab that did nothing (16 Oct 2026).
     for tab in re.findall(r"<button class=\"tab[^>]*>", tabs):
         assert "onclick=\"showTab(" in tab, tab
-    for el in ("upg-behind", "upg-plan", "upg-go", "upg-runs", "upg-run-detail", "upg-refresh"):
+    for el in ("upg-behind", "upg-plan", "upg-go", "upg-runs", "upg-refresh", "run-backdrop", "run-steps", "run-log"):
         assert f'id="{el}"' in body, el
 
 
 def test_the_script_uses_only_the_upgrade_routes_it_should():
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     upgrade_calls = set(re.findall(r"hostApi\(\s*[`'\"](/api/v1/upgrade[^`'\"]*)", script))
-    assert upgrade_calls == {"/api/v1/upgrade/behind", "/api/v1/upgrade", "/api/v1/upgrade/${encodeURIComponent(id)}"}, upgrade_calls
+    assert upgrade_calls == {"/api/v1/upgrade/behind", "/api/v1/upgrade", "/api/v1/upgrade/${encodeURIComponent(id)}",
+                             "/api/v1/upgrade/${encodeURIComponent(runId)}/step/${index}"}, upgrade_calls
     assert script.count("fetch('/api/v1/upgrade'") == 1, "every POST goes through postUpgrade, which keeps the 409's reason"
     assert "function refreshUpgrades" in script and "function initUpgrades" in script
     assert "initUpgrades();" in script, "wired at start, like the other panels"
@@ -56,7 +57,9 @@ def test_the_node_card_upgrades_that_node_and_the_tarball_push_is_gone():
     """The old Update Node / update all nodes pushed an Observatory tarball to a
     path in the yaml; no pip install has one, so both only ever answered
     "not configured". The node card now starts an upgrade run narrowed to
-    its node; Settings points at the tab."""
+    its node. Settings no longer has a door to the tab either: the tab is
+    right there (Chad, 20 Oct 2026: "trash the open upgrade tab in the
+    settings modal")."""
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     body = (UI / "body.html").read_text(encoding="utf-8")
     assert "/agent-update" not in script and "fireAgentUpdate" not in script
@@ -64,7 +67,8 @@ def test_the_node_card_upgrades_that_node_and_the_tarball_push_is_gone():
     assert "nodes: [nodeName]" in node and "only_behind: true" in node and "backup: true" in node
     confirm = script[script.index("function renderUpdateConfirmBody"):script.index("function renderCountdownBody")]
     assert "upgradeNode(node.name)" in confirm and "Upgrade" in confirm
-    assert 'id="cfg-open-upgrades"' in body and 'id="cfg-update-nodes"' not in body
+    assert 'id="cfg-open-upgrades"' not in body and 'id="cfg-update-nodes"' not in body
+    assert "cfg-open-upgrades" not in script
 
 
 def test_the_shell_serves_the_fragments(client):

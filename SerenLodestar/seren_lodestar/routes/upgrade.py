@@ -13,6 +13,10 @@ Upgrades across the cluster - /api/v1/upgrade (seren_lodestar.upgrade).
     GET  /api/v1/upgrade/behind     every seren service, its version, the index's newest
                                     (?refresh=true asks the index now; ?nodes=&services= narrow it)
     GET  /api/v1/upgrade/{run_id}   one run: every node/service step, its job, before and after
+    GET  /api/v1/upgrade/{run_id}/step/{i}
+                                    one step, with its job as that node's Observatory has it: every
+                                    note the job took (plan, snapshot, install, preflight, restart...)
+                                    with the pip tail or the error - what to read when a step failed
 """
 from __future__ import annotations
 
@@ -85,3 +89,31 @@ async def upgrade_run(request: Request, run_id: str):
     if run is None:
         return JSONResponse({"ok": False, "error": f"no upgrade run {run_id}"}, status_code=404)
     return {"ok": True, "run": run}
+
+
+@router.get(f"/api/{API_VERSION}/upgrade/{{run_id}}/step/{{index}}")
+async def upgrade_step(request: Request, run_id: str, index: int):
+    """One step of a run and the job behind it, fetched from the node now.
+    Chad, 20 Oct 2026: "we should be able to click the line and view the logs
+    of what happened (this will help ts upgrade failures which are a giant
+    pain my ass)". The job's `steps` are the log: each note says what was
+    tried, whether it went, and carries the pip tail or the error."""
+    svc = _service(request)
+    run = svc.load(run_id) if svc else None
+    if run is None:
+        return JSONResponse({"ok": False, "error": f"no upgrade run {run_id}"}, status_code=404)
+    steps = run.get("steps") or []
+    if index < 0 or index >= len(steps):
+        return JSONResponse({"ok": False, "error": f"run {run_id} has no step {index}"}, status_code=404)
+    step = steps[index]
+    job, note = None, None
+    if not step.get("job"):
+        note = (f"no job on the node: {step.get('error')}" if step.get("error")
+                else f"skipped: {step.get('skipped')}" if step.get("skipped")
+                else "already on its newest" if step.get("state") == "current"
+                else "the Observatory was never asked")
+    else:
+        job = await svc.job_of(step)
+        if job is None:
+            note = f"the job {step['job']} is not on {step.get('node')} any more, or the node did not answer"
+    return {"ok": True, "run_id": run_id, "index": index, "step": step, "job": job, "note": note}

@@ -78,10 +78,12 @@ def test_settings_and_refresh_move_to_the_header_strip_on_the_glance_screen():
     css = (UI / "styles.css").read_text(encoding="utf-8")
     aside = (UI / "header_aside.html").read_text(encoding="utf-8")
     script = (UI / "scripts.js").read_text(encoding="utf-8")
-    assert re.search(r"\.glance-only\s*\{\s*display:\s*none;", css), "hidden on a desktop"
-    assert ".glance-only { display: inline-flex" in _short_viewport_block()
+    # The shell's header.seren-head button sets display, so the hide needs
+    # the same specificity (20 Oct 2026: the gear showed on every desk).
+    assert re.search(r"\.glance-only, header\.seren-head \.glance-only\s*\{\s*display:\s*none;", css),         "hidden on a desktop: the header pair with the shell's specificity, and the grid's arrows with the plain class"
+    assert "header.seren-head .glance-only { display: inline-flex" in _short_viewport_block()
     for id_ in ("aside-settings", "aside-refresh"):
-        assert f'id="{id_}"' in aside and "glance-only" in aside
+        assert f'id="{id_}"' in aside and f'glance-only" id="{id_}"' in aside or f'glance-only icon" id="{id_}"' in aside, f"{id_} is glance only"
     assert "function eagerRefresh" in script, "one refresh shared by the card and the strip"
     assert "eagerRefresh(refreshBtn)" in script and "eagerRefresh(asideRefresh)" in script
     assert "asideSettings.addEventListener('click', openSettingsModal)" in script
@@ -102,13 +104,18 @@ def test_which_nodes_are_on_this_screen_is_the_browsers_choice():
     assert "renderScreenNodes()" in opener, "the tick boxes are built from the last payload when the modal opens"
 
 
-def test_a_hidden_node_comes_back_while_it_needs_you():
+def test_a_hidden_node_stays_hidden_and_the_led_still_counts_it():
+    """Until 20 Oct 2026 a hidden node came back while it needed you; then
+    the desktop went down and Chad could not get it off the grid. Hidden is
+    hidden now; the settings label still says when a hidden node needs you."""
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     needs = script[script.index("function nodeNeedsYou"):script.index("function nodeShownHere")]
     assert "if (!node.online) return true" in needs
     assert "symbolFor(s?.status)[1] === 'down'" in needs
-    shown = script[script.index("function nodeShownHere"):script.index("// ------", script.index("function nodeShownHere"))]
-    assert "!hidden.has(node.name) || nodeNeedsYou(node)" in shown
+    shown = script[script.index("function nodeShownHere"):script.index("function hostApi")]
+    assert "return !hidden.has(node.name);" in shown and "nodeNeedsYou" not in shown
+    settings = script[script.index("function renderScreenNodes"):script.index("function renderScreenPrefs")]
+    assert "nodeNeedsYou(node)" in settings, "the tick box still says when a hidden node needs you"
     # the LED and the gaps strip never look at the hidden set
     for fn in ("function renderGaps", "function setOverallLed"):
         seg = script[script.index(fn):script.index("function", script.index(fn) + 10)]

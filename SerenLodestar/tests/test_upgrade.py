@@ -313,6 +313,16 @@ def test_the_routes_and_the_tools(tmp_path):
                 break
         assert c.get(f"/api/v1/upgrade/{rid}").json()["run"]["state"] == "done"
         assert c.get("/api/v1/upgrade").json()["runs"][0]["id"] == rid
+        # One step with the job behind it, from the node (20 Oct 2026: the
+        # viewer's run modal reads the job's notes as the log of a failure).
+        st = c.get(f"/api/v1/upgrade/{rid}/step/0").json()
+        assert st["ok"] and st["step"]["service"] == "seren-memory-wren" and st["note"] is None
+        assert st["job"]["id"] == st["step"]["job"] and st["job"]["state"] == "done"
+        assert c.get(f"/api/v1/upgrade/{rid}/step/9").status_code == 404
+        assert c.get("/api/v1/upgrade/nope/step/0").status_code == 404
+        nuc.silent.add(st["step"]["job"])
+        gone = c.get(f"/api/v1/upgrade/{rid}/step/0").json()
+        assert gone["job"] is None and "did not answer" in gone["note"]
         assert c.post("/api/v1/upgrade", json={"services": ["nothing-here"]}).status_code == 409
         assert c.get("/api/v1/upgrade/nope").status_code == 404
         names = {t.name for t in asyncio.run(c.app.state.tool_client.list_tools_async())}

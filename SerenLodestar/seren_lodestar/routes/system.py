@@ -48,6 +48,17 @@ async def system_status(request: Request):
 
     async def fetch_node(name: str, agent):
         snap = cluster.get_snapshots().get(name)
+        # A node the discovery already calls offline is not asked again on
+        # every poll: that was three reads into a dead socket per answer, and
+        # the answer waited for them (20 Oct 2026). The discovery loop keeps
+        # probing it and the next status sees it the moment it is back.
+        if snap is not None and not snap.online:
+            return {
+                "name": name, "nickname": agent.nickname, "is_host": agent.is_host, "online": False,
+                "suspect": cluster.suspect_reason(name), "last_probed": snap.last_probed,
+                "last_error": snap.last_error, "installed_services": snap.installed_services,
+                "agent_node": None, "thermal": None, "services_detail": None,
+            }
         node_task = _safe_get(agent.get_node_async())
         thermal_task = _safe_get(agent.get_thermal_async())
         services_task = _safe_get(agent.get_services_async())

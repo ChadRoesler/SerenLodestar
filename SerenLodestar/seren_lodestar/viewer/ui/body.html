@@ -45,24 +45,21 @@
       <h3>Behind <span class="upg-count" id="upg-behind-count"></span></h3>
       <div class="upg-table-wrap"><table class="upg-table" id="upg-behind"><tbody><tr><td class="upg-empty">loading…</td></tr></tbody></table></div>
     </section>
-    <section class="upg-card" id="upg-plan-card" hidden>
-      <h3>Plan <span class="upg-count" id="upg-plan-sum"></span></h3>
-      <div id="upg-plan-body"></div>
-    </section>
     <section class="upg-card">
       <h3>Runs <span class="upg-count" id="upg-runs-count"></span></h3>
       <div id="upg-current"></div>
       <div class="upg-table-wrap"><table class="upg-table" id="upg-runs"><tbody><tr><td class="upg-empty">none yet</td></tr></tbody></table></div>
-      <div id="upg-run-detail"></div>
     </section>
   </div>
 </div>
 
 <!-- Settings modal. The token lives in the shell's 🔑 modal, and same-origin
      serving means there's no Lodestar-URL field. Updating is the Upgrades
-     tab's job now: the old "update all nodes" pushed a tarball of the
+     tab's job: the old "update all nodes" pushed a tarball of the
      Observatory to a path in the yaml, which no pip install has, so it only
-     ever answered "not configured" (16 Oct 2026). -->
+     ever answered "not configured" (16 Oct 2026); the door to the tab that
+     replaced it went too, the tab is right there (20 Oct 2026). What is
+     left is this screen: which nodes it shows, and how its cards fold. -->
 <div class="modal-backdrop" id="settings-backdrop">
   <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="modal-header">
@@ -75,7 +72,6 @@
       <button class="modal-close" id="settings-close" aria-label="Close">✕</button>
     </div>
     <div class="settings-body">
-      <button class="update-nodes-btn" id="cfg-open-upgrades">open the Upgrades tab</button>
       <!-- Which nodes this browser's grid shows. A per-screen choice, kept in
            localStorage, never in the yaml: the rack's glance screen hides the
            desk it stands next to, the desk's browser sees everything. -->
@@ -83,17 +79,45 @@
         <div class="cfg-screen-title">On this screen</div>
         <div class="cfg-nodes" id="cfg-nodes"><span class="cfg-empty">no nodes yet</span></div>
         <div class="hint">
-          Unticked nodes stay off this screen's grid, in this browser only, and come
-          back on their own while they are offline or carry something down. The LED
-          and the gaps strip count every node either way.
+          Unticked nodes stay off this screen's grid, in this browser only, offline
+          or not. The LED and the gaps strip count every node either way.
+        </div>
+      </div>
+      <!-- How this screen's cards fold (Chad, 20 Oct 2026: "auto expand
+           instances, auto expand child processes, limit shown before scroll").
+           Same home as the node ticks: this browser, nowhere else. -->
+      <div class="cfg-screen">
+        <div class="cfg-screen-title">Cards</div>
+        <div class="cfg-folds">
+          <label><input type="checkbox" id="cfg-expand-instances"> auto expand instances</label>
+          <label><input type="checkbox" id="cfg-expand-children"> auto expand child processes</label>
+          <label><input type="number" id="cfg-rows" min="0" max="60" step="1" value="0"> rows shown before a card scrolls <span class="cfg-dim">(0: the card grows)</span></label>
+        </div>
+        <div class="hint">
+          A ▸ row folds what is under it: an instance's services, or the processes
+          a service owns. A folded row still carries the family's light and memory.
+          The node modal always shows everything.
         </div>
       </div>
       <div class="hint">
         Set your bearer token via the <b>🔑</b> button in the header.
-        <b>Upgrades</b> shows every seren service against the index's newest,
-        plans a run, and moves what is behind: a backup first, then pip, an
-        import check, a restart and health, with a rollback when one fails.
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- An upgrade run, in a modal (20 Oct 2026). The steps on the left; click
+     one and the right half is the job's notes from the node: what to read
+     when an upgrade failed. openRun() toggles .visible. -->
+<div class="modal-backdrop" id="run-backdrop">
+  <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="upgrade run">
+    <div class="modal-header">
+      <div class="modal-header-fields" id="run-header-fields"></div>
+      <button class="modal-close" id="run-close" aria-label="Close">✕</button>
+    </div>
+    <div class="run-body">
+      <div class="run-steps" id="run-steps"></div>
+      <div class="run-log" id="run-log"><div class="run-log-empty">click a step to see what happened on the node</div></div>
     </div>
   </div>
 </div>

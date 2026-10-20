@@ -40,13 +40,36 @@ function saveHiddenNodes(set) {
     try { localStorage.setItem(HIDDEN_NODES_KEY, JSON.stringify([...set])); } catch (_) { /* private window, blocked storage */ }
 }
 
+// The rest of "On this screen" (Chad, 20 Oct 2026: "offer more control: auto
+// expand instances, auto expand child processes, limit shown before scroll").
+// Same home as the hidden nodes: this browser, nowhere else.
+const SCREEN_KEY = 'lodestar.screen';
+const SCREEN_DEFAULTS = { expandInstances: false, expandChildren: false, rowsBeforeScroll: 0 };  // 0 = the card grows
+
+function loadScreen() {
+    try {
+        const raw = localStorage.getItem(SCREEN_KEY);
+        const got = raw ? JSON.parse(raw) : {};
+        return { ...SCREEN_DEFAULTS, ...(got && typeof got === 'object' ? got : {}) };
+    } catch (_) { return { ...SCREEN_DEFAULTS }; }
+}
+
+function saveScreen(prefs) {
+    try { localStorage.setItem(SCREEN_KEY, JSON.stringify(prefs)); } catch (_) { /* private window, blocked storage */ }
+}
+
 function nodeNeedsYou(node) {
     if (!node.online) return true;
     return Object.values(node.services || {}).some(s => symbolFor(s?.status)[1] === 'down');
 }
 
+// Hidden means hidden. Until 20 Oct 2026 a hidden node came back on its
+// own while it was offline or carried something down, so the glance never
+// lied; then the desktop went down for a day and Chad could not get it off
+// the grid ("unable to deactivate an offline node from the view"). The LED
+// and the gaps strip still count every node, so the truth is one glance up.
 function nodeShownHere(node, hidden) {
-    return !hidden.has(node.name) || nodeNeedsYou(node);
+    return !hidden.has(node.name);
 }
 
 // ----------------------------------------------------------------------
@@ -131,11 +154,16 @@ function setModalFlash(msg, type) {
 // ----------------------------------------------------------------------
 // STATUS SYMBOLS
 //   ●  running + healthy      ◐  running, port not responding
-//   ◯  not running            ⚠  degraded / unknown
+//   ◯  not running            ◌  idle: off on purpose, Lodestar starts it when asked
+// An orchestrated service that is off is resting, not down (the Observatory
+// says `idle`). Chad, 20 Oct 2026: "services that are orchestrated shouldn't
+// show as degraded on the top bar ... 12/28 services idle (it's on when we
+// need it on)". ◌ is Geometric Shapes too, so the kiosk font has it.
 // ----------------------------------------------------------------------
 function symbolFor(status) {
     if (!status) return ['◯', 'down'];
     if (!status.running && status.library_mode) return ['●', 'ok'];
+    if (!status.running && (status.idle || status.orchestrated)) return ['◌', 'idle'];
     if (!status.running) return ['◯', 'down'];
 
     if (status.library_mode) return ['●', 'ok'];
@@ -244,6 +272,7 @@ function findNode(nodeName) {
 function deriveState(svcStatus) {
     if (!svcStatus) return ['-', 'down'];
     if (svcStatus.library_mode) return ['Library', 'library'];
+    if (!svcStatus.running && (svcStatus.idle || svcStatus.orchestrated)) return ['Idle', 'idle'];
     if (!svcStatus.running) return ['Down', 'down'];
     const ph = svcStatus.port_health;
     if (ph === null || ph === undefined) return ['Running', 'running'];
@@ -260,6 +289,7 @@ function serviceBadge(svcStatus) {
         case 'library':        return { emoji: '📚', title: 'Library (no daemon)', cls: 'badge-lib' };
         case 'systemd':        return { emoji: '🎛️', title: 'systemd unit', cls: 'badge-systemd' };
         case 'docker_compose': return { emoji: '📦', title: 'Docker Compose service', cls: 'badge-docker' };
+        case 'container':      return { emoji: '📦', title: 'a container it started', cls: 'badge-docker' };
         default:               return { emoji: '', title: '', cls: '' };
     }
 }
@@ -387,30 +417,33 @@ function renderModalBody(node) {
         return;
     }
 
-    const svcNames = node.installed_services || [];
+    // Every service, a child under its owner (serviceTree): in the modal the
+    // family is always open, this is the detail view.
+    const rows = flattenTree(serviceTree(node, { hideObservatory: false }), () => true);
     const rowHeight = window.matchMedia('(max-height: 400px)').matches ? 56 : 64;
     const bodyHeight = body.getBoundingClientRect().height || 500;
     const headerHeight = 33;
     modal.rowsVisible = Math.max(1, Math.floor((bodyHeight - headerHeight) / rowHeight));
-    const maxScroll = Math.max(0, svcNames.length - modal.rowsVisible);
+    const maxScroll = Math.max(0, rows.length - modal.rowsVisible);
     modal.scrollIndex = Math.min(modal.scrollIndex, maxScroll);
 
-    const visible = svcNames.slice(modal.scrollIndex, modal.scrollIndex + modal.rowsVisible);
+    const visible = rows.slice(modal.scrollIndex, modal.scrollIndex + modal.rowsVisible);
 
     let rowsHtml = '';
-    for (const svcName of visible) {
-        const svcStatus = node.services_detail?.[svcName]?.status;
+    for (const r of visible) {
+        const svcStatus = r.status;
         const mem = svcStatus?.memory_mb;
         const cpu = svcStatus?.cpu_percent;
         const pid = svcStatus?.pid;
         const [stateLabel, stateCls] = deriveState(svcStatus);
-        const badge = serviceBadge(svcStatus);
+        const badge = serviceBadge(r.container ? { service_type: 'container' } : svcStatus);
+        const family = r.children.length ? ` <span class="svc-count" title="${r.children.length} of its own">${r.children.length}</span>` : '';
 
         rowsHtml += `
-            <div class="modal-svc-row" data-svc="${escapeHtml(svcName)}">
+            <div class="modal-svc-row depth-${r.depth}${r.container ? ' container' : ''}" data-svc="${r.container ? '' : escapeHtml(r.name)}">
                 <div class="name">
                     ${badge.emoji ? `<span class="svc-badge ${badge.cls}" title="${escapeHtml(badge.title)}">${badge.emoji}</span>` : ''}
-                    ${escapeHtml(svcName)}
+                    ${escapeHtml(r.name)}${family}
                 </div>
                 <div class="num">${fmtBytes(mem)}</div>
                 <div class="num">${cpu != null ? cpu.toFixed(1) + ' %' : '-'}</div>
@@ -419,6 +452,7 @@ function renderModalBody(node) {
             </div>
         `;
     }
+    const svcNames = rows;
 
     const canUp = modal.scrollIndex > 0;
     const canDown = modal.scrollIndex < maxScroll;
@@ -483,7 +517,7 @@ function renderModalBody(node) {
     for (const row of document.querySelectorAll('.modal-svc-row')) {
         row.addEventListener('click', () => {
             const svc = row.dataset.svc;
-            openServiceDrill(svc);
+            if (svc) openServiceDrill(svc);   // a container it started has no manifest to drill into
         });
     }
 }
@@ -739,9 +773,25 @@ function fmtTime(iso) {
 // instance, collapsed by default, and show each as the app it is: loci,
 // memory, observatory. Anything without an instance suffix (llama, kokoro,
 // searxng, a bare "seren-theatre") stays where it was.
+//
+// The family (20 Oct 2026): a service can belong to another (`parent` on its
+// status, from its manifest) or own things that have no manifest of their own
+// (`children` on its status: the containers Probe starts). Chad: "probe
+// should own its sub processes ... chevroned so that you can click probe and
+// see its owned processes and their memory usage ... this way we don't lie
+// about what's there and what it has". The owner's row folds the family and
+// carries its memory; the fold is remembered across the poll's re-render.
 // ----------------------------------------------------------------------
 const INSTANCE_RE = /^(?:seren-|Seren)(.+?)-([A-Za-z0-9]+)$/;
-const expandedGroups = new Set();            // "node/instance", survives the poll's re-render
+// hideObservatory folds the node's own Observatory out of a listing. It was
+// the card's default for an hour on 20 Oct 2026 ("Observatory, we know it's a
+// node") until Chad saw it gone and said he had meant the Observatory
+// viewer's hostname pill, not this. Kept as a switch, off everywhere.
+const OBSERVATORY_RE = /observatory/i;
+// Folds whose state differs from this screen's default ("node/instance" for
+// an instance group, "node/svc:name" for an owner), so the poll's re-render
+// keeps what was opened or closed, and the settings change the rest at once.
+const toggledFolds = new Set();
 
 function instanceOf(svcName) {
     const m = INSTANCE_RE.exec(svcName);
@@ -767,9 +817,87 @@ function groupServices(names) {
     return { groups: [...groups.values()], flat };
 }
 
-function toggleGroup(nodeName, instance) {
-    const key = `${nodeName}/${instance}`;
-    if (expandedGroups.has(key)) expandedGroups.delete(key); else expandedGroups.add(key);
+// Who a service belongs to, when the owner is on the node: `parent` from the
+// status (the manifest's), else the one shape we always rolled up by hand,
+// searxng-redis under searxng.
+function parentOf(node, name) {
+    const names = node.installed_services || [];
+    const st = node.services?.[name]?.status;
+    const declared = st?.parent || node.services_detail?.[name]?.manifest?.parent;
+    if (declared && names.includes(declared) && declared !== name) return declared;
+    const lower = name.toLowerCase();
+    if (lower !== 'searxng' && lower.includes('searxng')) {
+        const owner = names.find(n => n.toLowerCase() === 'searxng');
+        if (owner) return owner;
+    }
+    return null;
+}
+
+// The node's services as a tree: {groups: [{instance, label, rows}], flat: rows}
+// where a row is {name, label, status, children: [row], container}. A child
+// with a manifest is a row like any other; a container the owner started is
+// a row made from what the Observatory found this poll.
+function serviceTree(node, { hideObservatory } = {}) {
+    const names = node.installed_services || [];
+    const kids = {};
+    for (const n of names) {
+        const p = parentOf(node, n);
+        if (p) (kids[p] = kids[p] || []).push(n);
+    }
+    const row = (name, label) => {
+        const status = node.services?.[name]?.status;
+        const own = (kids[name] || []).map(k => row(k, instanceOf(k)?.app || k));
+        // A container that is there but not running was stopped on purpose
+        // (a pod torn down leaves its exited containers behind): resting,
+        // not down. It must not paint its owner, or the node, red.
+        const found = (status?.children || []).map(c => ({
+            name: c.name, label: c.name, container: true, children: [],
+            status: { running: !!c.running, idle: !c.running, memory_mb: c.memory_mb, cpu_percent: c.cpu_percent,
+                      service_type: 'container' },
+        }));
+        return { name, label, status, container: false, children: [...own, ...found] };
+    };
+    const top = names.filter(n => !parentOf(node, n) && !(hideObservatory && OBSERVATORY_RE.test(n)));
+    const { groups, flat } = groupServices(top);
+    return { groups: groups.map(g => ({ ...g, rows: g.services.map(sv => row(sv.name, sv.app)) })),
+             flat: flat.map(n => row(n, n)) };
+}
+
+// The rows in reading order with their depth, opening a family when
+// `open(row)` says so (the modal: always; the card: the fold).
+function flattenTree(tree, open) {
+    const out = [];
+    const walk = (r, depth) => {
+        out.push({ ...r, depth });
+        if (r.children.length && open(r)) for (const c of r.children) walk(c, depth + 1);
+    };
+    for (const g of tree.groups) for (const r of g.rows) walk(r, 0);
+    for (const r of tree.flat) walk(r, 0);
+    return out;
+}
+
+// A row's light and memory, the family included: a closed fold still tells
+// the truth about what is under it. idle ranks below ok: an owner with one
+// running child and one resting is running.
+const STATUS_RANK = { down: 3, warn: 2, ok: 1, idle: 0 };
+function rollup(rows) {
+    let worst = null, total = 0, hasMem = false;
+    const take = (r) => {
+        const [sym, cls] = symbolFor(r.status);
+        if (worst === null || (STATUS_RANK[cls] ?? 0) > (STATUS_RANK[worst[1]] ?? 0)) worst = [sym, cls];
+        if (r.status?.memory_mb != null) { total += r.status.memory_mb; hasMem = true; }
+        for (const c of r.children) take(c);
+    };
+    for (const r of rows) take(r);
+    return { sym: worst ? worst[0] : '◯', cls: worst ? worst[1] : 'down', mem: hasMem ? total : null };
+}
+
+function foldOpen(key, dflt) {
+    return toggledFolds.has(key) ? !dflt : dflt;
+}
+
+function toggleFold(key) {
+    if (toggledFolds.has(key)) toggledFolds.delete(key); else toggledFolds.add(key);
     const el = document.getElementById('grid');
     if (el && window._lastStatus) renderGrid(window._lastStatus);
 }
@@ -780,6 +908,7 @@ function toggleGroup(nodeName, instance) {
 function renderNode(node) {
     const card = document.createElement('div');
     card.className = 'node' + (node.online ? '' : ' offline');
+    const screen = loadScreen();
 
     const ip = node.agent_node?.manifest?.ip_addresses?.[0] || '-';
     const hostname = node.agent_node?.manifest?.hostname || node.name;
@@ -803,84 +932,55 @@ function renderNode(node) {
 
     const list = document.createElement('div');
     list.className = 'svc-list';
+    // "limit shown before scroll": past this many rows the list scrolls
+    // instead of the card growing. 0 is the old behaviour.
+    const cap = parseInt(screen.rowsBeforeScroll, 10) || 0;
+    if (cap > 0) { list.classList.add('capped'); list.style.setProperty('--svc-rows', String(cap)); }
 
     if (!node.online) {
         list.innerHTML = `<div class="svc-empty">unreachable</div>`;
     } else if (!node.installed_services || node.installed_services.length === 0) {
         list.innerHTML = `<div class="svc-empty">no services installed</div>`;
     } else {
-        const STATUS_RANK = { down: 2, warn: 1, ok: 0 };
-        let searxngRolled = false;
-        let searxngWorstCls = 'ok';
-        let searxngWorstSym = '●';
-        let searxngTotalMem = 0;
-        let searxngHasMem = false;
-
-        for (const svcName of node.installed_services) {
-            if (!svcName.toLowerCase().includes('searxng')) continue;
-            const svcStatus = node.services?.[svcName]?.status;
-            const [sym, cls] = symbolFor(svcStatus);
-            if ((STATUS_RANK[cls] ?? 0) > (STATUS_RANK[searxngWorstCls] ?? 0)) {
-                searxngWorstCls = cls;
-                searxngWorstSym = sym;
-            }
-            const mem = svcStatus?.memory_mb;
-            if (mem != null) { searxngTotalMem += mem; searxngHasMem = true; }
-            searxngRolled = true;
-        }
-
-        const { groups, flat } = groupServices(node.installed_services);
-        const svcRow = (svcName, shown, cls2) => {
-            const svcStatus = node.services?.[svcName]?.status;
-            const [sym, cls] = symbolFor(svcStatus);
-            const mem = svcStatus?.memory_mb;
-            const badge = serviceBadge(svcStatus);
-            return `
-                    <div class="svc-name ${cls2}" title="${escapeHtml(svcName)}">${badge.emoji ? `<span class="svc-badge ${badge.cls}" title="${escapeHtml(badge.title)}">${badge.emoji}</span>` : ''}${escapeHtml(shown)}</div>
-                    <div class="svc-mem">${fmtBytes(mem)}</div>
-                    <div class="svc-stat ${cls}">${sym}</div>
-                  `;
+        const tree = serviceTree(node, { hideObservatory: false });
+        const html = [];
+        // ▸/▾ (Geometric Shapes) and not ⏵/⏷ (Misc Technical): a Linux kiosk with
+        // DejaVu and Noto Emoji has the first pair and draws the second as a hex box.
+        const caret = (open) => `<span class="svc-caret">${open ? '▾' : '▸'}</span>`;
+        const svcRow = (r, depth) => {
+            const own = rollup([r]);
+            const badge = serviceBadge(r.container ? { service_type: 'container' } : r.status);
+            const key = `${node.name}/svc:${r.name}`;
+            const open = r.children.length ? foldOpen(key, !!screen.expandChildren) : false;
+            const cls2 = depth > 0 ? ` svc-in-group depth-${depth}` : '';
+            html.push(`
+                    <div class="svc-name${r.children.length ? ' svc-owner' : ''}${cls2}" title="${escapeHtml(r.name)}${r.children.length ? ` · ${r.children.length} of its own` : ''}"
+                         ${r.children.length ? `data-fold="${escapeHtml(key)}"` : ''}>${r.children.length ? caret(open) : ''}${badge.emoji ? `<span class="svc-badge ${badge.cls}" title="${escapeHtml(badge.title)}">${badge.emoji}</span>` : ''}${escapeHtml(r.label)}${r.children.length ? `<span class="svc-count">${r.children.length}</span>` : ''}</div>
+                    <div class="svc-mem">${fmtBytes(own.mem)}</div>
+                    <div class="svc-stat ${own.cls}">${own.sym}</div>
+                  `);
+            if (open) for (const c of r.children) svcRow(c, depth + 1);
         };
-        for (const g of groups) {
+        for (const g of tree.groups) {
             // The group row carries the worst status and the summed memory of
             // what is inside it, so a collapsed instance still tells the truth.
-            let worstCls = 'ok', worstSym = '●', total = 0, hasMem = false;
-            for (const s of g.services) {
-                const st = node.services?.[s.name]?.status;
-                const [sym, cls] = symbolFor(st);
-                if ((STATUS_RANK[cls] ?? 0) > (STATUS_RANK[worstCls] ?? 0)) { worstCls = cls; worstSym = sym; }
-                if (st?.memory_mb != null) { total += st.memory_mb; hasMem = true; }
-            }
-            const open = expandedGroups.has(`${node.name}/${g.instance}`);
-            // ▸/▾ (Geometric Shapes) and not ⏵/⏷ (Misc Technical): a Linux kiosk with
-            // DejaVu and Noto Emoji has the first pair and draws the second as a hex box.
-            list.innerHTML += `
-                    <div class="svc-name svc-group" data-node="${escapeHtml(node.name)}" data-instance="${escapeHtml(g.instance)}"
-                         title="${g.services.length} services of the ${escapeHtml(g.instance)} instance">
-                      <span class="svc-caret">${open ? '▾' : '▸'}</span>${escapeHtml(g.label)}
-                      <span class="svc-count">${g.services.length}</span></div>
-                    <div class="svc-mem">${hasMem ? fmtBytes(total) : '-'}</div>
-                    <div class="svc-stat ${worstCls}">${worstSym}</div>
-                  `;
-            if (open) for (const s of g.services) list.innerHTML += svcRow(s.name, s.app, 'svc-in-group');
+            const all = rollup(g.rows);
+            const key = `${node.name}/${g.instance}`;
+            const open = foldOpen(key, !!screen.expandInstances);
+            html.push(`
+                    <div class="svc-name svc-group" data-fold="${escapeHtml(key)}"
+                         title="${g.rows.length} services of the ${escapeHtml(g.instance)} instance">
+                      ${caret(open)}${escapeHtml(g.label)}
+                      <span class="svc-count">${g.rows.length}</span></div>
+                    <div class="svc-mem">${fmtBytes(all.mem)}</div>
+                    <div class="svc-stat ${all.cls}">${all.sym}</div>
+                  `);
+            if (open) for (const r of g.rows) svcRow(r, 1);
         }
-        for (const svcName of flat) {
-            if (svcName.toLowerCase().includes('searxng')) {
-                if (searxngRolled) {
-                    const badge = serviceBadge({ service_type: 'docker_compose' });
-                    list.innerHTML += `
-                    <div class="svc-name">${badge.emoji ? `<span class="svc-badge ${badge.cls}" title="${escapeHtml(badge.title)}">${badge.emoji}</span>` : ''}searxng</div>
-                    <div class="svc-mem">${searxngHasMem ? fmtBytes(searxngTotalMem) : '-'}</div>
-                    <div class="svc-stat ${searxngWorstCls}">${searxngWorstSym}</div>
-                  `;
-                    searxngRolled = false;
-                }
-                continue;
-            }
-            list.innerHTML += svcRow(svcName, svcName, '');
-        }
-        list.querySelectorAll('.svc-group').forEach(el =>
-            el.addEventListener('click', ev => { ev.stopPropagation(); toggleGroup(el.dataset.node, el.dataset.instance); }));
+        for (const r of tree.flat) svcRow(r, 0);
+        list.innerHTML = html.join('');
+        list.querySelectorAll('[data-fold]').forEach(el =>
+            el.addEventListener('click', ev => { ev.stopPropagation(); toggleFold(el.dataset.fold); }));
     }
     card.appendChild(list);
 
@@ -1049,24 +1149,35 @@ function setOverallLed(status, caps) {
         return;
     }
 
-    let degraded = 0, total = 0;
+    // Degraded is what should be up and is not. Idle is the other half: off
+    // because nobody needs it right now, and said so, not counted against
+    // the cluster (Chad, 20 Oct 2026).
+    let degraded = 0, idle = 0, total = 0;
     for (const node of nodes) {
         for (const svcName of (node.installed_services || [])) {
             total++;
             const ss = node.services?.[svcName]?.status;
             const [, cls] = symbolFor(ss);
-            if (cls !== 'ok') degraded++;
+            if (cls === 'idle') idle++;
+            else if (cls !== 'ok') degraded++;
         }
     }
 
-    if (degraded > 0) setLed('warn', `${degraded}/${total} services degraded`);
-    else setLed('ok', `${total} services healthy`);
+    const idleNote = idle > 0 ? ` · ${idle} idle` : '';
+    if (degraded > 0) setLed('warn', `${degraded}/${total} services degraded${idleNote}`);
+    else setLed('ok', `${total - idle}/${total} services healthy${idleNote}`);
 }
 
 function setLed(cls, text) {
     const led = document.getElementById('led');
     led.className = 'led ' + cls;
     document.getElementById('led-text').textContent = text;
+    // Lit in the accent while all is well, red when a node is offline or a
+    // service that should be up is not (Chad, 20 Oct 2026). Idle rides in the
+    // text; it is not a fault.
+    const pill = document.getElementById('led-overall');
+    pill.classList.toggle('bad', cls === 'down' || cls === 'warn');
+    pill.classList.toggle('hot', cls === 'ok');
 }
 
 function setLastRefresh() {
@@ -1086,10 +1197,10 @@ async function upgradeNode(nodeName) {
                                                  reason: `node card: ${nodeName}` });
     if (status === 202 && body.ok) {
         setModalFlash(`run ${body.run.id} started for ${nodeName}: ${body.run.steps.length} step(s) - see Upgrades`, 'ok');
-        _upgOpenRun = body.run.id;
         showTab('upgrades');
         closeNodeModal();
         refreshUpgrades();
+        openRun(body.run.id);
         return;
     }
     setModalFlash(body.error || `Lodestar answered HTTP ${status}`, 'err');
@@ -1129,10 +1240,26 @@ function initSettings() {
         if (e.key === 'Escape' && isSettingsOpen()) closeSettingsModal();
     });
 
-    document.getElementById('cfg-open-upgrades').addEventListener('click', () => {
-        closeSettingsModal();
-        showTab('upgrades');
-        refreshUpgrades();
+    // The screen's folds and its row cap: saved as they change, applied to
+    // the grid at once. The folds someone opened by hand (toggledFolds) are
+    // relative to the default, so flipping the default would flip them too;
+    // "auto expand" means all of them, so the hand-made ones are cleared.
+    for (const id of ['cfg-expand-instances', 'cfg-expand-children']) {
+        document.getElementById(id).addEventListener('change', () => {
+            const prefs = loadScreen();
+            prefs.expandInstances = document.getElementById('cfg-expand-instances').checked;
+            prefs.expandChildren = document.getElementById('cfg-expand-children').checked;
+            saveScreen(prefs);
+            toggledFolds.clear();
+            if (window._lastStatus) renderGrid(window._lastStatus);
+        });
+    }
+    document.getElementById('cfg-rows').addEventListener('change', (e) => {
+        const prefs = loadScreen();
+        prefs.rowsBeforeScroll = Math.max(0, parseInt(e.target.value, 10) || 0);
+        e.target.value = prefs.rowsBeforeScroll;
+        saveScreen(prefs);
+        if (window._lastStatus) renderGrid(window._lastStatus);
     });
 
     // The header-strip twins of the actions card (glance screen only).
@@ -1156,7 +1283,7 @@ function renderScreenNodes() {
         const off = hidden.has(node.name);
         const needs = off && nodeNeedsYou(node);
         label.className = (off ? 'off' : '') + (needs ? ' needs' : '');
-        label.title = needs ? 'hidden here, but shown while it needs you' : '';
+        label.title = needs ? 'hidden here; it is offline or has something down' : '';
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = !off;
@@ -1173,8 +1300,16 @@ function renderScreenNodes() {
     }
 }
 
+function renderScreenPrefs() {
+    const prefs = loadScreen();
+    document.getElementById('cfg-expand-instances').checked = !!prefs.expandInstances;
+    document.getElementById('cfg-expand-children').checked = !!prefs.expandChildren;
+    document.getElementById('cfg-rows').value = parseInt(prefs.rowsBeforeScroll, 10) || 0;
+}
+
 function openSettingsModal() {
     renderScreenNodes();
+    renderScreenPrefs();
     document.getElementById('settings-backdrop').classList.add('visible');
 }
 
@@ -1232,9 +1367,11 @@ async function refreshUpgrades(refreshIndex = false) {
     go.disabled = !moves || !!(status && status.busy);
     go.title = status && status.busy ? 'a run is going' : moves ? `move ${behind.behind.length} service(s) to their newest`
              : 'everything is on its newest';
-    if (_upgOpenRun && status && !status.busy) {
-        const fresh = (status.runs || []).find(r => r.id === _upgOpenRun);
-        if (fresh) renderRunDetail(fresh);
+    // The run modal follows the run it shows while it is going.
+    if (_upgOpenRun && isRunOpen()) {
+        const fresh = status?.busy && status.current?.id === _upgOpenRun ? status.current
+                    : (status?.runs || []).find(r => r.id === _upgOpenRun);
+        if (fresh) renderRunModal(fresh);
     }
 }
 
@@ -1275,11 +1412,24 @@ async function planUpgrades() {
 }
 
 function renderPlan(plan) {
-    const card = document.getElementById('upg-plan-card');
-    card.hidden = false;
+    // The plan opens in the same modal as a run (Chad, 20 Oct 2026: "Plan
+    // should show a modal similar to viewing an upgrade. currently it slaps
+    // it between behind and runs and squishes and looks weird"). Left: every
+    // service in run order; click a line and the right half says what it
+    // would install, or why it would not move.
+    _upgOpenRun = null;
+    runModal.open = true;
+    runModal.step = null;
+    runModal.plan = plan;
     const order = plan.order || [];
     const current = new Set(plan.current || []);
-    const lines = order.map(key => {
+    const moving = order.filter(k => !current.has(k)).length;
+    document.getElementById('run-header-fields').innerHTML = `
+        <div class="modal-header-field"><div class="modal-header-label">Plan</div><div class="modal-header-value">dry run · nothing changed</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">Would move</div><div class="modal-header-value">${moving}</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">Current</div><div class="modal-header-value">${current.size}</div></div>
+        ${plan.skipped_offline?.length ? `<div class="modal-header-field"><div class="modal-header-label">Offline</div><div class="modal-header-value">${escapeHtml(plan.skipped_offline.join(', '))}</div></div>` : ''}`;
+    const lines = order.map((key, i) => {
         const [node, svc] = key.split('/');
         const d = ((plan.nodes || {})[node] || {})[svc] || {};
         let state, what;
@@ -1293,15 +1443,35 @@ function renderPlan(plan) {
             what = moves.length ? `would install ${upgCell(moves.join(', '))}` : 'nothing to install';
             if (d.before && d.package) what = `${upgCell(d.before[d.package])} → ` + what;
         }
-        return `<tr class="${state}"><td>${upgCell(node)}</td><td>${upgCell(svc)}</td><td>${upgBadge(state)}</td><td>${what}</td></tr>`;
+        return `<tr class="${state} upg-step" data-plan-row="${i}"><td>${upgCell(node)}</td><td>${upgCell(svc)}</td><td>${upgBadge(state)}</td><td>${what}</td></tr>`;
     });
-    const moving = order.filter(k => !current.has(k)).length;
-    document.getElementById('upg-plan-sum').textContent =
-        `${moving} would move, ${current.size} current` + (plan.skipped_offline?.length ? ` · offline: ${plan.skipped_offline.join(', ')}` : '');
-    document.getElementById('upg-plan-body').innerHTML =
-        `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>node</th><th>service</th><th></th><th>in run order</th></tr>${lines.join('')}</tbody></table></div>`
-        + (plan.held?.length ? `<div class="upg-note">held: ${escapeHtml(plan.held.join(' · '))}</div>` : '')
-        + (plan.error ? `<div class="upg-note bad">${escapeHtml(plan.error)}</div>` : '');
+    document.getElementById('run-steps').innerHTML =
+        (plan.error ? `<div class="upg-note bad">${escapeHtml(plan.error)}</div>` : '')
+        + `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>node</th><th>service</th><th></th><th>in run order</th></tr>${lines.join('')}</tbody></table></div>`
+        + (plan.held?.length ? `<div class="upg-note">held: ${escapeHtml(plan.held.join(' · '))}</div>` : '');
+    document.getElementById('run-log').innerHTML = '<div class="run-log-empty">click a line to see what it would install, or why it would not move</div>';
+    document.getElementById('run-backdrop').classList.add('visible');
+    document.getElementById('run-steps').querySelectorAll('tr[data-plan-row]').forEach(tr =>
+        tr.addEventListener('click', () => showPlanDetail(plan, order[parseInt(tr.dataset.planRow, 10)], tr)));
+}
+
+function showPlanDetail(plan, key, tr) {
+    document.querySelectorAll('#run-steps tr[data-plan-row]').forEach(r => r.classList.toggle('open', r === tr));
+    const [node, svc] = key.split('/');
+    const d = ((plan.nodes || {})[node] || {})[svc] || {};
+    const lines = [`<div class="run-log-head"><b>${upgCell(node)}/${upgCell(svc)}</b>${d.package ? ` <span class="run-log-dim">${escapeHtml(d.package)}</span>` : ''}</div>`];
+    const kv = (k, v) => lines.push(`<div class="run-log-kv"><span class="run-log-key">${escapeHtml(k)}</span> ${escapeHtml(typeof v === 'string' ? v : JSON.stringify(v))}</div>`);
+    const list = (k, arr) => { if (arr && arr.length) lines.push(`<div class="run-log-key">${escapeHtml(k)}</div><pre class="run-log-pre">${escapeHtml(arr.join('\n'))}</pre>`); };
+    if (d.before) kv('before', d.before);
+    list('would install', (d.would_install || []).map(w => `${w.name} ${w.version}`));
+    if (d.current) kv('current', d.current);
+    if (d.skipped) kv('skipped', d.skipped);
+    if (d.held) kv('held', d.held);
+    list('problems', (d.needs || {}).problems || []);
+    list('unchecked', (d.needs || {}).unchecked || []);
+    if (d.error) lines.push(`<div class="run-log-line bad">${escapeHtml(d.error)}</div>`);
+    if (lines.length === 1) lines.push('<div class="run-log-note">nothing more to say about this one</div>');
+    document.getElementById('run-log').innerHTML = lines.join('');
 }
 
 async function startUpgrades() {
@@ -1318,8 +1488,8 @@ async function startUpgrades() {
         return;
     }
     upgFlash(`run ${body.run.id} started: ${body.run.steps.length} step(s)`, 'ok');
-    _upgOpenRun = body.run.id;
     await refreshUpgrades();
+    openRun(body.run.id);
 }
 
 function renderRuns(status) {
@@ -1331,9 +1501,8 @@ function renderRuns(status) {
         const done = r.steps.filter(s => !['pending', 'running'].includes(s.state)).length;
         const now = r.steps.find(s => s.state === 'running');
         cur.innerHTML = `<div class="upg-live">${upgBadge('running')} <b>${escapeHtml(r.id)}</b> · ${done}/${r.steps.length} steps`
-            + (now ? ` · now ${escapeHtml(now.node)}/${escapeHtml(now.service)}` : '') + ` · ${escapeHtml(r.reason || '')}</div>`;
-        if (!_upgOpenRun) _upgOpenRun = r.id;
-        if (_upgOpenRun === r.id) renderRunDetail(r);
+            + (now ? ` · now ${escapeHtml(now.node)}/${escapeHtml(now.service)}` : '') + ` · ${escapeHtml(r.reason || '')}`
+            + ` <button class="upg-link" data-run="${escapeHtml(r.id)}">open</button></div>`;
     } else {
         cur.innerHTML = '';
     }
@@ -1350,29 +1519,108 @@ function renderRuns(status) {
     }).join('');
 }
 
+// The run in a modal, not at the foot of the page (Chad, 20 Oct 2026: "when
+// clicking on a run, the data should show in a modal ... we should be able to
+// click the line and view the logs of what happened"). The left half is the
+// steps; a step clicked fetches its job from the node and the right half is
+// every note that job took - the pip tail, the health that never came, the
+// peer that was too old. What to read when an upgrade failed.
+const runModal = { open: false, step: null, plan: null };
+
+function isRunOpen() { return runModal.open; }
+
 async function openRun(id) {
     _upgOpenRun = id;
+    runModal.step = null;
     const out = await hostApi(`/api/v1/upgrade/${encodeURIComponent(id)}`);
-    if (out && out.run) renderRunDetail(out.run);
+    if (!out || !out.run) return;
+    runModal.open = true;
+    document.getElementById('run-backdrop').classList.add('visible');
+    document.getElementById('run-log').innerHTML = '<div class="run-log-empty">click a step to see what happened on the node</div>';
+    renderRunModal(out.run);
     if (_upgStatus) renderRuns(_upgStatus);
 }
 
-function renderRunDetail(run) {
-    const el = document.getElementById('upg-run-detail');
-    const rows = (run.steps || []).map(s => {
+function closeRun() {
+    runModal.open = false;
+    runModal.step = null;
+    runModal.plan = null;
+    _upgOpenRun = null;
+    document.getElementById('run-backdrop').classList.remove('visible');
+    if (_upgStatus) renderRuns(_upgStatus);
+}
+
+function renderRunModal(run) {
+    const when = run.created_at ? new Date(run.created_at * 1000).toLocaleString() : '-';
+    document.getElementById('run-header-fields').innerHTML = `
+        <div class="modal-header-field"><div class="modal-header-label">Run</div><div class="modal-header-value">${escapeHtml(run.id)}</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">State</div><div class="modal-header-value">${upgBadge(run.state)}</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">When</div><div class="modal-header-value">${escapeHtml(when)}</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">Why</div><div class="modal-header-value">${upgCell(run.reason)}</div></div>`;
+    const rows = (run.steps || []).map((s, i) => {
         const ver = s.before && s.after && s.service
             ? `${upgCell(Object.values(s.before)[0])} → ${upgCell(Object.values(s.after)[0])}` : upgCell(s.version);
         const note = s.error || s.held || s.skipped || (s.state === 'current' ? `${upgCell(s.current)} already the newest` : '')
                    || (s.job ? `job ${s.job}` : '');
-        return `<tr class="${s.state}"><td>${upgCell(s.node)}</td><td>${upgCell(s.service)}</td><td>${upgBadge(s.state)}</td>`
+        return `<tr class="${s.state} upg-step${runModal.step === i ? ' open' : ''}" data-step="${i}"><td>${upgCell(s.node)}</td><td>${upgCell(s.service)}</td><td>${upgBadge(s.state)}</td>`
              + `<td class="mono">${ver}</td><td>${escapeHtml(String(note || ''))}</td></tr>`;
     });
-    el.innerHTML = `<div class="upg-detail-head"><b>${escapeHtml(run.id)}</b> ${upgBadge(run.state)}`
-        + (run.error ? ` <span class="upg-note bad">${escapeHtml(run.error)}</span>` : '')
-        + ` <button class="upg-link" id="upg-detail-close">close</button></div>`
+    document.getElementById('run-steps').innerHTML =
+        (run.error ? `<div class="upg-note bad">${escapeHtml(run.error)}</div>` : '')
         + `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>node</th><th>service</th><th></th><th>version</th><th></th></tr>${rows.join('')}</tbody></table></div>`;
-    document.getElementById('upg-detail-close').addEventListener('click', () => {
-        _upgOpenRun = null; el.innerHTML = ''; if (_upgStatus) renderRuns(_upgStatus);
+    document.getElementById('run-steps').querySelectorAll('tr[data-step]').forEach(tr =>
+        tr.addEventListener('click', () => showStepLog(run.id, parseInt(tr.dataset.step, 10))));
+}
+
+function fmtClock(ts) {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    return isNaN(d) ? '' : d.toLocaleTimeString();
+}
+
+async function showStepLog(runId, index) {
+    runModal.step = index;
+    document.querySelectorAll('#run-steps tr[data-step]').forEach(tr =>
+        tr.classList.toggle('open', parseInt(tr.dataset.step, 10) === index));
+    const log = document.getElementById('run-log');
+    log.innerHTML = '<div class="run-log-empty">asking the node…</div>';
+    const out = await hostApi(`/api/v1/upgrade/${encodeURIComponent(runId)}/step/${index}`);
+    if (!out || !out.ok) { log.innerHTML = '<div class="run-log-empty">the step did not come back</div>'; return; }
+    const step = out.step || {};
+    const head = `<div class="run-log-head"><b>${upgCell(step.node)}/${upgCell(step.service)}</b> ${upgBadge(step.state)}`
+               + (step.backup?.stashed?.length ? ` <span class="run-log-dim">backup ${escapeHtml(step.backup.stashed.join(', '))}</span>` : '') + `</div>`;
+    if (!out.job) {
+        log.innerHTML = head + `<div class="run-log-note">${escapeHtml(out.note || 'nothing more to show')}</div>`;
+        return;
+    }
+    const job = out.job;
+    const lines = [];
+    lines.push(`<div class="run-log-line"><span class="run-log-dim">${escapeHtml(fmtClock(job.created_at))}</span> job ${escapeHtml(job.id)} · ${escapeHtml(job.package || '')} ${escapeHtml(job.version || 'newest')} · ${upgBadge(job.state)}</div>`);
+    for (const n of (job.steps || [])) {
+        // Everything the note carried beyond its name and verdict; an empty
+        // list or string says nothing, so it is not drawn.
+        const extra = Object.entries(n).filter(([k, v]) => !['step', 'ok', 'at'].includes(k)
+                                                       && !(Array.isArray(v) && !v.length) && v !== '' && v != null);
+        lines.push(`<div class="run-log-line ${n.ok ? 'ok' : 'bad'}"><span class="run-log-dim">${escapeHtml(fmtClock(n.at))}</span> ${escapeHtml(n.step)} ${n.ok ? '✓' : '✗'}</div>`);
+        for (const [k, v] of extra) {
+            if (Array.isArray(v) && v.every(x => typeof x === 'string')) {
+                lines.push(`<div class="run-log-key">${escapeHtml(k)}</div><pre class="run-log-pre">${escapeHtml(v.join('\n'))}</pre>`);
+            } else {
+                lines.push(`<div class="run-log-kv"><span class="run-log-key">${escapeHtml(k)}</span> ${escapeHtml(typeof v === 'string' ? v : JSON.stringify(v))}</div>`);
+            }
+        }
+    }
+    if (job.error) lines.push(`<div class="run-log-line bad">${escapeHtml(job.error)}</div>`);
+    log.innerHTML = head + lines.join('');
+}
+
+function initRunModal() {
+    document.getElementById('run-close').addEventListener('click', closeRun);
+    document.getElementById('run-backdrop').addEventListener('click', (e) => {
+        if (e.target.id === 'run-backdrop') closeRun();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && runModal.open) closeRun();
     });
 }
 
@@ -1387,6 +1635,10 @@ function initUpgrades() {
         const row = e.target.closest('tr[data-run]');
         if (row) openRun(row.dataset.run);
     });
+    document.getElementById('upg-current').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-run]');
+        if (btn) openRun(btn.dataset.run);
+    });
     // The tab's own onclick (tabs.html) switches the view and fetches: the
     // shell styles tabs and activates the first, it does not wire clicks.
 }
@@ -1397,6 +1649,7 @@ function initUpgrades() {
 initSettings();
 initModal();
 initUpgrades();
+initRunModal();
 initGlance();
 refresh();
 startPolling(POLL_INTERVAL);

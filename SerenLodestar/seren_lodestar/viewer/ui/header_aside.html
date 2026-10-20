@@ -1,9 +1,15 @@
 <!-- Right-side header widgets, filled by scripts.js:
      the overall cluster-health LED and the last-refresh timestamp. The old
      monolith <header> is gone — the shell owns brand + subtitle now. -->
-<span id="led-overall"><span class="led" id="led"></span><span id="led-text">connecting…</span></span>
+<!-- The LED and its words in the family's .head-pill (Chad, 20 Oct 2026:
+     "pill the services degraded and 11 idle bit with standard color so that
+     it looks like the rest"); .bad turns it red when something is down. -->
+<span class="head-pill" id="led-overall"><span class="led" id="led"></span><span id="led-text">connecting…</span></span>
 <span id="last-refresh">—</span>
-<!-- Glance-screen only (styles.css .glance-only): the actions card has no
-     room on a 280px letterbox, so settings and refresh live up here. -->
+<!-- Glance screen only (styles.css .glance-only): on a 280px letterbox the
+     actions card has no room, so its two buttons live up here as 36px
+     squares. On a desk the actions card has them and the header shows
+     neither (Chad, 20 Oct 2026: "the glance buttons on lodestar shouldn't
+     appear in desktop mode, those are dashboard only things"). -->
 <button class="aside-btn glance-only" id="aside-settings" title="settings" aria-label="settings">⚙</button>
-<button class="aside-btn glance-only" id="aside-refresh" title="force eager rediscovery" aria-label="refresh">↻</button>
+<button class="aside-btn glance-only icon" id="aside-refresh" title="force eager rediscovery" aria-label="refresh">⟳</button>

@@ -89,7 +89,7 @@ def test_a_manifest_without_a_service_key_does_not_blow_up_the_dto():
 async def test_get_services_fills_the_service_name_from_the_key(monkeypatch):
     agent = _cluster().get_agent("nano")
 
-    async def fake_get(path, dto):
+    async def fake_get(path, dto, timeout=None):
         return agent_client._from_dict({"count": 1, "services": {
             "searxng": {"manifest": {"port": 8888}}}}, dto)
     monkeypatch.setattr(agent, "_get_json", fake_get)

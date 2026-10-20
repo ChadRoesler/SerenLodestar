@@ -83,6 +83,13 @@ class ServiceManifest:
     installed_at: Optional[str] = None
     schema_version: int = 0
     service_specific: Optional[dict[str, Any]] = None
+    service_type: Optional[str] = None
+    #: What it belongs to / what it owns (Observatory manifests, 20 Oct 2026):
+    #: `parent` names the owner of a service with a manifest of its own;
+    #: `children` says how the owner finds what it starts itself
+    #: ({"docker_project": "seren-probe-*"}). The viewer folds the family.
+    parent: Optional[str] = None
+    children: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -106,6 +113,15 @@ class ServiceStatus:
     uptime_seconds: Optional[int] = None
     library_mode: Optional[bool] = None
     port_health: Optional[PortHealth] = None
+    #: Off on purpose: Lodestar starts it when someone needs it. `idle` is
+    #: orchestrated + not running, and the viewer shows it as idle, not down.
+    orchestrated: Optional[bool] = None
+    idle: Optional[bool] = None
+    #: The family (see ServiceManifest.parent / children): the owner's name,
+    #: and the rows of what this service owns, each {name, kind, running,
+    #: memory_mb, cpu_percent, ...}, as the Observatory found them this poll.
+    parent: Optional[str] = None
+    children: Optional[list[dict[str, Any]]] = None
 
 
 @dataclass

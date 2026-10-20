@@ -46,6 +46,14 @@ from .dtos import (
 log = logging.getLogger("seren_lodestar.agent_client")
 
 
+#: The three reads the dashboard poll makes of every node (node, thermal,
+#: services) wait this long, not the client's 35s. A node that drops its
+#: packets (the desktop with its service stopped, 20 Oct 2026) cost every
+#: status answer 35s, and the dashboard read "unreachable" for the whole
+#: cluster while five nodes were fine. 8s is long enough for a services
+#: answer with docker on a slow box; the discovery loop has its own clock.
+STATUS_READ_TIMEOUT_S = 8.0
+
 class JetsonAgentClient:
     """Typed HTTP client for one node's Observatory API."""
 
@@ -101,13 +109,13 @@ class JetsonAgentClient:
         return await self._get_json("api/v1/system/version", VersionResponse)
 
     async def get_node_async(self) -> Optional[NodeResponse]:
-        return await self._get_json("api/v1/system/node", NodeResponse)
+        return await self._get_json("api/v1/system/node", NodeResponse, timeout=STATUS_READ_TIMEOUT_S)
 
     async def get_thermal_async(self) -> Optional[ThermalResponse]:
-        return await self._get_json("api/v1/system/thermal", ThermalResponse)
+        return await self._get_json("api/v1/system/thermal", ThermalResponse, timeout=STATUS_READ_TIMEOUT_S)
 
     async def get_services_async(self) -> Optional[ServicesResponse]:
-        resp = await self._get_json("api/v1/system/services", ServicesResponse)
+        resp = await self._get_json("api/v1/system/services", ServicesResponse, timeout=STATUS_READ_TIMEOUT_S)
         if resp is not None and isinstance(resp.services, dict):
             # Observatory allows a manifest with no `service` key (the name
             # falls back to the filename stem). The key we were handed IS the
@@ -444,9 +452,9 @@ class JetsonAgentClient:
             self._log(f"GET {path} -> {type(ex).__name__}: {ex}")
             return None
 
-    async def _get_json(self, path: str, dto_class: type) -> Optional[Any]:
+    async def _get_json(self, path: str, dto_class: type, timeout: Optional[float] = None) -> Optional[Any]:
         try:
-            resp = await self._client.get(path)
+            resp = await self._client.get(path, timeout=timeout) if timeout else await self._client.get(path)
             if not resp.is_success:
                 self._log(f"GET {path} -> HTTP {resp.status_code}")
                 return None
