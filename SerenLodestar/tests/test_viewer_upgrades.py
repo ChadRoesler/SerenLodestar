@@ -58,7 +58,7 @@ def test_the_node_card_upgrades_that_node_and_the_tarball_push_is_gone():
     path in the yaml; no pip install has one, so both only ever answered
     "not configured". The node card now starts an upgrade run narrowed to
     its node. Settings no longer has a door to the tab either: the tab is
-    right there (Chad, 20 Oct 2026: "trash the open upgrade tab in the
+    right there (20 Oct 2026: "trash the open upgrade tab in the
     settings modal")."""
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     body = (UI / "body.html").read_text(encoding="utf-8")
@@ -78,7 +78,7 @@ def test_the_shell_serves_the_fragments(client):
 
 
 def test_the_open_steps_log_follows_the_run_until_it_has_ended():
-    """Chad, 20 Oct 2026: "log portion of the modal ... is not refreshing as
+    """20 Oct 2026: "log portion of the modal ... is not refreshing as
     new data comes in". The poll re-asks the open step quietly (no
     placeholder, scroll kept) while the step or its job is still going."""
     script = (UI / "scripts.js").read_text(encoding="utf-8")

@@ -42,7 +42,7 @@ def road(tmp_path, monkeypatch):
         "serviceSpecific": {"model": "small.en"}}))
     (home / ".seren" / "secrets.json").write_text(json.dumps({"observatory_token": "obs-secret"}))
 
-    box = {"running": False, "stops": 0, "heard": [], "answer": " Hello, Wren.", "status": 200}
+    box = {"running": False, "stops": 0, "heard": [], "answer": " Hello there.", "status": 200}
 
     async def probe(manifest):
         return {"ok": box["running"]}
@@ -91,7 +91,7 @@ def test_a_clip_wakes_whisper_is_heard_and_whisper_is_let_go(road):
     c, box = road
     r = _hear(c, language="en", holder="symposium")
     assert r.status_code == 200, r.text
-    assert r.json() == {"ok": True, "text": "Hello, Wren.", "node": "jetson",
+    assert r.json() == {"ok": True, "text": "Hello there.", "node": "jetson",
                         "seconds": r.json()["seconds"], "model": "small.en"}
     (heard,) = box["heard"]
     assert heard["running"] is True, "whisper was up while it listened"

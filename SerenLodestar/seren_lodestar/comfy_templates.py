@@ -5,7 +5,7 @@ seren_lodestar.comfy_templates
 An image request -> a ComfyUI workflow, using the node's catalog (what each
 model file IS - seren_observatory.comfy_catalog) to pick the pieces.
 
-A request names what it wants in words a person (or Wren) would use - a
+A request names what it wants in words a person (or the assistant) would use - a
 prompt, maybe a model, some LoRAs with weights, a size - and never a graph.
 Each model family (arch) has one template: the loaders, text encoder, VAE,
 sampler and settings that family needs. A LoRA is checked against the model
@@ -25,7 +25,7 @@ model needs:
 
     STYLES     how each family wants to be prompted - booru tags for Pony /
                Illustrious / NoobAI, sentences for the T5/LLM-encoder ones,
-               short for SD 1.5. Whoever writes the prompt (Wren, or a local
+               short for SD 1.5. Whoever writes the prompt (the assistant, or a local
                model translating a request) is told which, in every plan.
     negatives  the anatomy negative, and a "single subject" one when one
                person is asked for and nobody else is mentioned.

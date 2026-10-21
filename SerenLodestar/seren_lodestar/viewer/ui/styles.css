@@ -20,7 +20,7 @@
     --bg-row-selected: #131732;
     --bg-overlay: #0B1026E6;     /* modal backdrop dim */
     /* Borders: the card edges and dividers are the shell's --border, the
-       same hairline every viewer draws (Chad, 20 Oct 2026: "border should
+       same hairline every viewer draws (20 Oct 2026: "border should
        go back to the same border color used across all things"); the
        electric #1E2A78 this leaf used to set is gone. Hover/focus is gold. */
     --border-hi: #C9A227;        /* gold hover/focus ring (was purple) */
@@ -279,7 +279,7 @@
 * --------------------------------------------------------------------- */
 /* .modal.settings-modal, two classes: the plain .settings-modal lost to .modal
    below it (same specificity, later wins) and the settings came up the size
-   of the node modal, a 1100x650 box around four lines. Chad, 20 Oct 2026:
+   of the node modal, a 1100x650 box around four lines. 20 Oct 2026:
    "the modal is large on desktop so maybe shrink it". */
 .modal.settings-modal { width: min(560px, 95vw); height: auto; max-height: 90vh; }
 

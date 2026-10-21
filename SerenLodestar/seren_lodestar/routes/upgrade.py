@@ -95,7 +95,7 @@ async def upgrade_run(request: Request, run_id: str):
 @router.get(f"/api/{API_VERSION}/upgrade/{{run_id}}/step/{{index}}")
 async def upgrade_step(request: Request, run_id: str, index: int):
     """One step of a run and the job behind it, fetched from the node now.
-    Chad, 20 Oct 2026: "we should be able to click the line and view the logs
+    20 Oct 2026: "we should be able to click the line and view the logs
     of what happened (this will help ts upgrade failures which are a giant
     pain my ass)". The job's `steps` are the log: each note says what was
     tried, whether it went, and carries the pip tail or the error."""

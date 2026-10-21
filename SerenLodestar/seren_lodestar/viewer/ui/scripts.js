@@ -40,7 +40,7 @@ function saveHiddenNodes(set) {
     try { localStorage.setItem(HIDDEN_NODES_KEY, JSON.stringify([...set])); } catch (_) { /* private window, blocked storage */ }
 }
 
-// The rest of "On this screen" (Chad, 20 Oct 2026: "offer more control: auto
+// The rest of "On this screen" (20 Oct 2026: "offer more control: auto
 // expand instances, auto expand child processes, limit shown before scroll").
 // Same home as the hidden nodes: this browser, nowhere else.
 const SCREEN_KEY = 'lodestar.screen';
@@ -65,7 +65,7 @@ function nodeNeedsYou(node) {
 
 // Hidden means hidden. Until 20 Oct 2026 a hidden node came back on its
 // own while it was offline or carried something down, so the glance never
-// lied; then the desktop went down for a day and Chad could not get it off
+// lied; then the desktop went down for a day and it could not be taken off
 // the grid ("unable to deactivate an offline node from the view"). The LED
 // and the gaps strip still count every node, so the truth is one glance up.
 function nodeShownHere(node, hidden) {
@@ -156,7 +156,7 @@ function setModalFlash(msg, type) {
 //   ●  running + healthy      ◐  running, port not responding
 //   ◯  not running            ◌  idle: off on purpose, Lodestar starts it when asked
 // An orchestrated service that is off is resting, not down (the Observatory
-// says `idle`). Chad, 20 Oct 2026: "services that are orchestrated shouldn't
+// says `idle`). 20 Oct 2026: "services that are orchestrated shouldn't
 // show as degraded on the top bar ... 12/28 services idle (it's on when we
 // need it on)". ◌ is Geometric Shapes too, so the kiosk font has it.
 // ----------------------------------------------------------------------
@@ -776,7 +776,7 @@ function fmtTime(iso) {
 //
 // The family (20 Oct 2026): a service can belong to another (`parent` on its
 // status, from its manifest) or own things that have no manifest of their own
-// (`children` on its status: the containers Probe starts). Chad: "probe
+// (`children` on its status: the containers Probe starts). The ask: "probe
 // should own its sub processes ... chevroned so that you can click probe and
 // see its owned processes and their memory usage ... this way we don't lie
 // about what's there and what it has". The owner's row folds the family and
@@ -785,7 +785,7 @@ function fmtTime(iso) {
 const INSTANCE_RE = /^(?:seren-|Seren)(.+?)-([A-Za-z0-9]+)$/;
 // hideObservatory folds the node's own Observatory out of a listing. It was
 // the card's default for an hour on 20 Oct 2026 ("Observatory, we know it's a
-// node") until Chad saw it gone and said he had meant the Observatory
+// node") until it was seen gone and the point turned out to be the Observatory
 // viewer's hostname pill, not this. Kept as a switch, off everywhere.
 const OBSERVATORY_RE = /observatory/i;
 // Folds whose state differs from this screen's default ("node/instance" for
@@ -1151,7 +1151,7 @@ function setOverallLed(status, caps) {
 
     // Degraded is what should be up and is not. Idle is the other half: off
     // because nobody needs it right now, and said so, not counted against
-    // the cluster (Chad, 20 Oct 2026).
+    // the cluster (20 Oct 2026).
     let degraded = 0, idle = 0, total = 0;
     for (const node of nodes) {
         for (const svcName of (node.installed_services || [])) {
@@ -1173,7 +1173,7 @@ function setLed(cls, text) {
     led.className = 'led ' + cls;
     document.getElementById('led-text').textContent = text;
     // Lit in the accent while all is well, red when a node is offline or a
-    // service that should be up is not (Chad, 20 Oct 2026). Idle rides in the
+    // service that should be up is not (20 Oct 2026). Idle rides in the
     // text; it is not a fault.
     const pill = document.getElementById('led-overall');
     pill.classList.toggle('bad', cls === 'down' || cls === 'warn');
@@ -1368,7 +1368,7 @@ async function refreshUpgrades(refreshIndex = false) {
     go.title = status && status.busy ? 'a run is going' : moves ? `move ${behind.behind.length} service(s) to their newest`
              : 'everything is on its newest';
     // The run modal follows the run it shows while it is going: the steps,
-    // and the log of the open step (Chad, 20 Oct 2026: "log portion of the
+    // and the log of the open step (20 Oct 2026: "log portion of the
     // modal ... is not refreshing as new data comes in"). The log is asked
     // again quietly, no placeholder, until the step it shows has ended.
     if (_upgOpenRun && isRunOpen()) {
@@ -1549,7 +1549,7 @@ async function planUpgrades() {
 }
 
 function renderPlan(plan) {
-    // The plan opens in the same modal as a run (Chad, 20 Oct 2026: "Plan
+    // The plan opens in the same modal as a run (20 Oct 2026: "Plan
     // should show a modal similar to viewing an upgrade. currently it slaps
     // it between behind and runs and squishes and looks weird"). Left: every
     // service in run order; click a line and the right half says what it
@@ -1656,7 +1656,7 @@ function renderRuns(status) {
     }).join('');
 }
 
-// The run in a modal, not at the foot of the page (Chad, 20 Oct 2026: "when
+// The run in a modal, not at the foot of the page (20 Oct 2026: "when
 // clicking on a run, the data should show in a modal ... we should be able to
 // click the line and view the logs of what happened"). The left half is the
 // steps; a step clicked fetches its job from the node and the right half is

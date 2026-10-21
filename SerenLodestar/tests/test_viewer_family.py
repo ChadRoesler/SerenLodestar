@@ -1,6 +1,6 @@
 """
 The family on the card, idle on the LED, the screen's folds, the run modal
-(20 Oct 2026). Chad's list, verbatim where it shaped the code:
+(20 Oct 2026). the list, verbatim where it shaped the code:
 
 - "probe should own its sub processes (the docker containers whatever) these
   should be rolled into it. and chevroned so that you can click probe and see
@@ -55,7 +55,7 @@ def test_the_tree_folds_owners_and_their_containers_and_hides_the_observatory_on
     assert "status?.children || []" in tree and "container: true" in tree, "what the Observatory found this poll becomes rows"
     assert "hideObservatory && OBSERVATORY_RE.test(n)" in tree
     node = script[script.index("function renderNode"):script.index("function renderGrid")]
-    assert "serviceTree(node, { hideObservatory: false })" in node, "the Observatory stays on the card (Chad meant the Observatory viewer's hostname pill, 20 Oct 2026)"
+    assert "serviceTree(node, { hideObservatory: false })" in node, "the Observatory stays on the card (the Observatory viewer's hostname pill was what was meant, 20 Oct 2026)"
     modal = script[script.index("function renderModalBody"):script.index("function renderConfirmBody")]
     assert "serviceTree(node, { hideObservatory: false })" in modal
     assert "if (svc) openServiceDrill(svc)" in modal, "a container it started has no manifest to drill into"

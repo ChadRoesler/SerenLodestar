@@ -87,7 +87,7 @@ def road(tmp_path, monkeypatch):
 
 def test_words_wake_the_speaker_and_come_back_as_a_wav_with_the_node_on_it(road):
     c, box = road
-    r = c.post("/api/v1/speak", json={"text": "Hi, it's Wren.", "holder": "symposium"})
+    r = c.post("/api/v1/speak", json={"text": "Hi, it's me.", "holder": "symposium"})
     assert r.status_code == 200, r.text
     assert r.content == WAV and r.headers["content-type"].startswith("audio/wav")
     assert r.headers["x-seren-node"] == "bigbox" and r.headers["x-seren-voice"] == "wren"
@@ -95,7 +95,7 @@ def test_words_wake_the_speaker_and_come_back_as_a_wav_with_the_node_on_it(road)
     voices, asked = box["asked"]
     assert voices["url"] == "http://127.0.0.1:8087/voices", "the card is looked up first: does it need anything?"
     assert asked["up"] == ["speaker"] and asked["url"] == "http://127.0.0.1:8087/speak"
-    assert json.loads(asked["body"]) == {"text": "Hi, it's Wren.", "voice": "wren"}
+    assert json.loads(asked["body"]) == {"text": "Hi, it's me.", "voice": "wren"}
     assert box["started"] == ["speaker"], "the wren card needs nothing beside the speaker"
     assert "x-seren-needs" not in r.headers
 

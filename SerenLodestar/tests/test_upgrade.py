@@ -295,7 +295,7 @@ def test_behind_is_every_service_against_the_index(tmp_path):
 
 
 def test_behind_carries_the_libraries_each_venv_runs_against_the_index(tmp_path):
-    """Chad, 20 Oct 2026: click a service, see its own version and the sinew
+    """20 Oct 2026: click a service, see its own version and the sinew
     and meninges it runs with their newest. The libraries are not in
     `behind` (a run moves services; the libraries ride along), they have
     their own list."""

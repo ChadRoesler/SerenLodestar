@@ -106,7 +106,7 @@ def test_which_nodes_are_on_this_screen_is_the_browsers_choice():
 
 def test_a_hidden_node_stays_hidden_and_the_led_still_counts_it():
     """Until 20 Oct 2026 a hidden node came back while it needed you; then
-    the desktop went down and Chad could not get it off the grid. Hidden is
+    the desktop went down and it could not be taken off the grid. Hidden is
     hidden now; the settings label still says when a hidden node needs you."""
     script = (UI / "scripts.js").read_text(encoding="utf-8")
     needs = script[script.index("function nodeNeedsYou"):script.index("function nodeShownHere")]

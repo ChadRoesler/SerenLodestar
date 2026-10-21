@@ -63,7 +63,7 @@ newest release the index has (cached; the updates: block says where and how
 often). With it, per service, the shared libraries its venv runs (seren-sinew
 and seren-meninges, `libs`) against the index too: a service can be on its
 newest and still run a stale library, and a run that moves only what is
-behind would not touch it. Chad, 20 Oct 2026: click a service, see its own
+behind would not touch it. 20 Oct 2026: click a service, see its own
 version and the libraries' with their newest, and update any of the three
 from there. A library alone is a run of that one service pinned to the
 version it already has, with `with` naming the library: pip moves the

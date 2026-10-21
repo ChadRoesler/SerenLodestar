@@ -1,5 +1,5 @@
 """
-The package modal (Chad, 20 Oct 2026): "click a service, have it give the
+The package modal (20 Oct 2026): "click a service, have it give the
 current version and latest of its self, and for the meninges and sinew
 packages as well and be able to update those packages from there". A row of
 the Behind table opens it; the three packages sit against the index's
