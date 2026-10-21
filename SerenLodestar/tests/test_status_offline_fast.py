@@ -82,3 +82,23 @@ async def test_the_status_reads_carry_the_short_timeout(monkeypatch):
     await c.get_node_async(); await c.get_thermal_async(); await c.get_services_async()
     assert [t for _, t in seen] == [STATUS_READ_TIMEOUT_S] * 3
     assert STATUS_READ_TIMEOUT_S < 35.0
+
+
+async def test_the_versions_read_connects_fast_and_waits_long():
+    """/upgrade/behind asks every online node's venvs (slow) but must not
+    hang on a node that will not even connect (20 Oct 2026: the desktop's
+    port dropped packets and every behind took the full 120s)."""
+    import httpx
+    c = JetsonAgentClient.__new__(JetsonAgentClient)
+    seen = []
+
+    class Client:
+        async def get(self, path, timeout=None):
+            seen.append(timeout)
+            raise RuntimeError("no network in this test")
+    c._client = Client()
+    c._log = lambda m: None
+    c._node_name = "x"
+    assert await c.get_upgrade_versions_async() is None
+    (t,) = seen
+    assert isinstance(t, httpx.Timeout) and t.connect == 5.0 and t.read == 120.0

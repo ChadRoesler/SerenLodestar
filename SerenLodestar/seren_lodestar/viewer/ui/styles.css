@@ -930,6 +930,26 @@
 .upg-link { background: none; border: 0; color: var(--accent-info); cursor: pointer; font-size: 11px; font-family: inherit; margin-left: 6px; }
 
 /* ---------------------------------------------------------------------
+*  PACKAGE MODAL - a service from the Behind table: its own package and the
+*  libraries its venv runs, each against the index, each with an Update
+*  (20 Oct 2026). Same shell as the node modal, sized to its three rows.
+* --------------------------------------------------------------------- */
+.upg-table tr.upg-svc { cursor: pointer; }
+    .upg-table tr.upg-svc:hover td { background: var(--bg-row); }
+    .upg-table td .upg-state + .upg-state { margin-left: 4px; }
+.pkg-modal { width: min(760px, 95vw); height: auto; max-height: 90vh; }
+.pkg-header-btns { display: flex; gap: 8px; }
+.pkg-body { padding: var(--pad); overflow: auto; }
+    .pkg-body .upg-table td.pkg-name { color: var(--text-hi); }
+    .pkg-body .upg-table td.pkg-act { text-align: right; white-space: nowrap; }
+    .pkg-body .upg-table tr.pkg-self td.pkg-name { font-weight: 500; }
+.pkg-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+    .pkg-foot .upg-note { margin: 0; }
+.pkg-flash { font-size: 12px; color: var(--text-mid); min-height: 1.4em; margin-bottom: 8px; }
+    .pkg-flash.err { color: var(--status-down); }
+    .pkg-flash.ok { color: var(--status-ok); }
+
+/* ---------------------------------------------------------------------
 *  RUN MODAL - one upgrade run: the steps, and a step's job notes from the
 *  node beside them (20 Oct 2026). Same shell as the node modal.
 * --------------------------------------------------------------------- */

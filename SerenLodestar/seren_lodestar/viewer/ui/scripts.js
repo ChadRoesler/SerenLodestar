@@ -1367,11 +1367,18 @@ async function refreshUpgrades(refreshIndex = false) {
     go.disabled = !moves || !!(status && status.busy);
     go.title = status && status.busy ? 'a run is going' : moves ? `move ${behind.behind.length} service(s) to their newest`
              : 'everything is on its newest';
-    // The run modal follows the run it shows while it is going.
+    // The run modal follows the run it shows while it is going: the steps,
+    // and the log of the open step (Chad, 20 Oct 2026: "log portion of the
+    // modal ... is not refreshing as new data comes in"). The log is asked
+    // again quietly, no placeholder, until the step it shows has ended.
     if (_upgOpenRun && isRunOpen()) {
         const fresh = status?.busy && status.current?.id === _upgOpenRun ? status.current
                     : (status?.runs || []).find(r => r.id === _upgOpenRun);
-        if (fresh) renderRunModal(fresh);
+        if (fresh) {
+            renderRunModal(fresh);
+            const shown = runModal.step != null ? (fresh.steps || [])[runModal.step] : null;
+            if (shown && !runModal.logSettled) showStepLog(fresh.id, runModal.step, { quiet: true });
+        }
     }
 }
 
@@ -1386,15 +1393,145 @@ function renderBehind(data) {
         return;
     }
     tb.innerHTML = '<tr><th>node</th><th>service</th><th>running</th><th>newest</th><th></th></tr>'
-        + rows.map(r => {
+        + rows.map((r, i) => {
             const state = r.behind === true ? 'behind' : r.behind === false ? 'current' : 'unknown';
             const why = r.latest_error ? ` title="${escapeHtml(r.latest_error)}"` : '';
-            return `<tr class="${state}"><td>${upgCell(r.node)}</td><td>${upgCell(r.service)}</td>`
+            // A library behind is its own mark: the service can be on its
+            // newest and still run a stale sinew or meninges.
+            const libsBehind = Object.entries(r.libs || {}).filter(([, l]) => l.behind === true).map(([n]) => n.replace(/^seren-/, ''));
+            const libMark = libsBehind.length ? `<span class="upg-state warn" title="${escapeHtml(libsBehind.join(', '))} behind">↑ ${escapeHtml(libsBehind.join(' + '))}</span>` : '';
+            return `<tr class="${state} upg-svc" data-row="${i}" title="click for its packages"><td>${upgCell(r.node)}</td><td>${upgCell(r.service)}</td>`
                  + `<td class="mono">${upgCell(r.version)}</td><td class="mono"${why}>${upgCell(r.latest)}</td>`
                  + `<td>${r.behind === true ? '<span class="upg-state warn">↑ behind</span>'
                         : r.behind === false ? '<span class="upg-state ok">current</span>'
-                        : '<span class="upg-state wait">?</span>'}</td></tr>`;
+                        : '<span class="upg-state wait">?</span>'}${libMark}</td></tr>`;
         }).join('');
+    if (pkgModal.open) renderPkgModal();
+}
+
+// ----------------------------------------------------------------------
+// PACKAGE MODAL (20 Oct 2026): a service clicked in the Behind table. Its
+// own package and the libraries its venv runs (sinew, meninges), each
+// against the index's newest, each with an Update; Update all moves the
+// three. Every button is a run of that one service through postUpgrade, so
+// the stash, the import check, the restart and the rollback are the usual
+// ones. A library alone pins the service to the version it has and names
+// the library in `with`: pip moves the library, the service stays, and the
+// node still restarts it so it runs the new code.
+// ----------------------------------------------------------------------
+const pkgModal = { open: false, node: null, service: null };
+
+function pkgRow() {
+    return (_upgBehind?.services || []).find(r => r.node === pkgModal.node && r.service === pkgModal.service) || null;
+}
+
+function openPkgModal(node, service) {
+    pkgModal.open = true;
+    pkgModal.node = node;
+    pkgModal.service = service;
+    document.getElementById('pkg-backdrop').classList.add('visible');
+    pkgFlash('');
+    renderPkgModal();
+}
+
+function closePkgModal() {
+    pkgModal.open = false;
+    document.getElementById('pkg-backdrop').classList.remove('visible');
+}
+
+function pkgFlash(msg, type) {
+    pkgModal.flash = msg ? { msg, type: type || 'info' } : null;
+    const el = document.getElementById('pkg-flash');
+    if (el) { el.textContent = msg || ''; el.className = 'pkg-flash' + (msg ? ` ${type || 'info'}` : ''); }
+}
+
+function pkgState(behind) {
+    return behind === true ? '<span class="upg-state warn">↑ behind</span>'
+         : behind === false ? '<span class="upg-state ok">current</span>'
+         : '<span class="upg-state wait">?</span>';
+}
+
+function renderPkgModal() {
+    const r = pkgRow();
+    const busy = !!(_upgStatus && _upgStatus.busy);
+    document.getElementById('pkg-header-fields').innerHTML = `
+        <div class="modal-header-field"><div class="modal-header-label">Service</div><div class="modal-header-value">${escapeHtml(pkgModal.service || '')}</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">Node</div><div class="modal-header-value">${escapeHtml(pkgModal.node || '')}</div></div>
+        <div class="modal-header-field"><div class="modal-header-label">State</div><div class="modal-header-value">${r ? pkgState(r.behind) : '<span class="upg-state wait">gone</span>'}</div></div>`;
+    const bodyEl = document.getElementById('pkg-body');
+    if (!r) {
+        bodyEl.innerHTML = '<div class="pkg-flash" id="pkg-flash"></div><div class="upg-empty">this service is not in the last Behind answer</div>';
+        return;
+    }
+    const pkgs = [{ name: r.package, version: r.version, latest: r.latest, behind: r.behind, latest_error: r.latest_error, self: true }]
+        .concat(Object.entries(r.libs || {}).map(([name, l]) => ({ name, ...l, self: false })));
+    const row = (p) => {
+        const can = !busy && p.behind === true;
+        const why = p.latest_error ? ` title="${escapeHtml(p.latest_error)}"` : '';
+        return `<tr class="${p.self ? 'pkg-self' : ''}${p.behind === true ? ' behind' : ''}"><td class="pkg-name">${upgCell(p.name)}</td>`
+             + `<td class="mono">${upgCell(p.version)}</td><td class="mono"${why}>${upgCell(p.latest)}</td><td>${pkgState(p.behind)}</td>`
+             + `<td class="pkg-act"><button class="upg-btn" data-pkg="${escapeHtml(p.name)}" ${can ? '' : 'disabled'} `
+             + `title="${busy ? 'a run is going' : p.behind === true ? `move ${escapeHtml(p.name)} to ${escapeHtml(p.latest || 'its newest')}` : 'nothing newer on the index'}">update</button></td></tr>`;
+    };
+    const anyBehind = pkgs.some(p => p.behind === true);
+    bodyEl.innerHTML = `<div class="pkg-flash${pkgModal.flash ? ' ' + pkgModal.flash.type : ''}" id="pkg-flash">${escapeHtml(pkgModal.flash?.msg || '')}</div>`
+        + `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>package</th><th>running</th><th>newest</th><th></th><th></th></tr>${pkgs.map(row).join('')}</tbody></table></div>`
+        + `<div class="pkg-foot"><div class="upg-note">${busy ? 'a run is going; the buttons wake when it ends' : 'an update backs the service up, installs, checks the import, restarts it and waits for health; anything that fails is rolled back'}</div>`
+        + `<button class="upg-btn upg-go" id="pkg-all" ${!busy && anyBehind ? '' : 'disabled'} title="the service and both libraries to their newest">update all</button></div>`;
+    bodyEl.querySelectorAll('button[data-pkg]').forEach(b => b.addEventListener('click', () => updatePackage(b.dataset.pkg)));
+    document.getElementById('pkg-all')?.addEventListener('click', () => updatePackage(null));
+}
+
+// pkg: the service's own package (its newest, the libraries left alone),
+// a library (the service pinned where it is, the library named), or null
+// for all three.
+async function updatePackage(pkg) {
+    const r = pkgRow();
+    if (!r) return;
+    const self = !pkg || pkg === r.package;
+    const body = { nodes: [r.node], services: [r.service], only_behind: false, backup: true,
+                   reason: `packages: ${r.service} ${pkg || 'all'}` };
+    if (!pkg) {
+        body.version = null;                         // the service to its newest, sinew + meninges with it
+    } else if (self) {
+        body.version = null; body.with = [];        // the service alone
+    } else {
+        body.version = r.version; body.with = [pkg]; // the library alone, the service pinned where it is
+    }
+    const what = !pkg ? `${r.service} and both libraries` : pkg;
+    if (!confirm(`Update ${what} on ${r.node}?\n\nThe service is backed up to the stash first, then pip, an import check, a restart and health; a failure rolls it back.`)) return;
+    pkgFlash(`starting a run for ${what}…`, 'info');
+    const { status, body: out } = await postUpgrade(body);
+    if (status !== 202 || !out.ok) {
+        pkgFlash(out.error || `Lodestar answered HTTP ${status}`, 'err');
+        return;
+    }
+    pkgFlash(`run ${out.run.id} started`, 'ok');
+    closePkgModal();
+    await refreshUpgrades();
+    openRun(out.run.id);
+}
+
+function initPkgModal() {
+    document.getElementById('pkg-close').addEventListener('click', closePkgModal);
+    document.getElementById('pkg-refresh').addEventListener('click', async (e) => {
+        e.currentTarget.disabled = true;
+        pkgFlash('asking the node and the index…', 'info');
+        try { await refreshUpgrades(true); } finally { document.getElementById('pkg-refresh').disabled = false; }
+        pkgFlash('');
+        renderPkgModal();
+    });
+    document.getElementById('pkg-backdrop').addEventListener('click', (e) => {
+        if (e.target.id === 'pkg-backdrop') closePkgModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && pkgModal.open) closePkgModal();
+    });
+    document.getElementById('upg-behind').addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-row]');
+        const r = tr && (_upgBehind?.services || [])[parseInt(tr.dataset.row, 10)];
+        if (r) openPkgModal(r.node, r.service);
+    });
 }
 
 async function planUpgrades() {
@@ -1525,7 +1662,7 @@ function renderRuns(status) {
 // steps; a step clicked fetches its job from the node and the right half is
 // every note that job took - the pip tail, the health that never came, the
 // peer that was too old. What to read when an upgrade failed.
-const runModal = { open: false, step: null, plan: null };
+const runModal = { open: false, step: null, plan: null, logSettled: false };
 
 function isRunOpen() { return runModal.open; }
 
@@ -1578,15 +1715,24 @@ function fmtClock(ts) {
     return isNaN(d) ? '' : d.toLocaleTimeString();
 }
 
-async function showStepLog(runId, index) {
+// Terminal on both sides: the step has ended and the job on the node has
+// too (a job that is still "restarting" keeps taking notes). After that
+// the poll leaves the log alone.
+const STEP_LIVE = ['pending', 'running', 'handed_off'];
+
+async function showStepLog(runId, index, { quiet = false } = {}) {
+    if (runModal.step !== index) runModal.logSettled = false;
     runModal.step = index;
     document.querySelectorAll('#run-steps tr[data-step]').forEach(tr =>
         tr.classList.toggle('open', parseInt(tr.dataset.step, 10) === index));
     const log = document.getElementById('run-log');
-    log.innerHTML = '<div class="run-log-empty">asking the node…</div>';
+    if (!quiet) log.innerHTML = '<div class="run-log-empty">asking the node…</div>';
     const out = await hostApi(`/api/v1/upgrade/${encodeURIComponent(runId)}/step/${index}`);
-    if (!out || !out.ok) { log.innerHTML = '<div class="run-log-empty">the step did not come back</div>'; return; }
+    if (runModal.step !== index || !isRunOpen()) return;          // another step was opened meanwhile
+    if (!out || !out.ok) { if (!quiet) log.innerHTML = '<div class="run-log-empty">the step did not come back</div>'; return; }
     const step = out.step || {};
+    runModal.logSettled = !STEP_LIVE.includes(step.state) && !(out.job && out.job.terminal === false);
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
     const head = `<div class="run-log-head"><b>${upgCell(step.node)}/${upgCell(step.service)}</b> ${upgBadge(step.state)}`
                + (step.backup?.stashed?.length ? ` <span class="run-log-dim">backup ${escapeHtml(step.backup.stashed.join(', '))}</span>` : '') + `</div>`;
     if (!out.job) {
@@ -1612,6 +1758,7 @@ async function showStepLog(runId, index) {
     }
     if (job.error) lines.push(`<div class="run-log-line bad">${escapeHtml(job.error)}</div>`);
     log.innerHTML = head + lines.join('');
+    if (atBottom) log.scrollTop = log.scrollHeight;              // following along: keep the newest note in view
 }
 
 function initRunModal() {
@@ -1650,6 +1797,7 @@ initSettings();
 initModal();
 initUpgrades();
 initRunModal();
+initPkgModal();
 initGlance();
 refresh();
 startPolling(POLL_INTERVAL);

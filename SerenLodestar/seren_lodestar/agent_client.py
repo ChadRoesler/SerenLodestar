@@ -201,7 +201,10 @@ class JetsonAgentClient:
         {package, version, needs}}. None when the Observatory is older than
         the route, or not answering. Slow-ish: it asks each venv."""
         try:
-            resp = await self._client.get("api/v1/upgrades/versions", timeout=120.0)
+            # Two minutes for the answer (it asks each venv), five seconds to
+            # connect: a node whose port drops packets (the desktop with its
+            # service down, 20 Oct 2026) held every behind for the full 120s.
+            resp = await self._client.get("api/v1/upgrades/versions", timeout=httpx.Timeout(120.0, connect=5.0))
             data = resp.json() if resp.is_success else None
         except Exception as ex:  # noqa: BLE001
             self._log(f"GET api/v1/upgrades/versions -> {type(ex).__name__}: {ex}")

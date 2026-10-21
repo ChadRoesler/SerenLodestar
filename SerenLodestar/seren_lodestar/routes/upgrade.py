@@ -10,7 +10,8 @@ Upgrades across the cluster - /api/v1/upgrade (seren_lodestar.upgrade).
          "backup": true,                                     a fresh copy into the stash before each
          "dry_run": false, "reason": "..."}
     GET  /api/v1/upgrade            the run going now, and the recent ones
-    GET  /api/v1/upgrade/behind     every seren service, its version, the index's newest
+    GET  /api/v1/upgrade/behind     every seren service, its version, the index's newest, and the
+                                    sinew and meninges its venv runs against the index (libs)
                                     (?refresh=true asks the index now; ?nodes=&services= narrow it)
     GET  /api/v1/upgrade/{run_id}   one run: every node/service step, its job, before and after
     GET  /api/v1/upgrade/{run_id}/step/{i}

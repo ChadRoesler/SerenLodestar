@@ -60,7 +60,15 @@ seeing the versions the ones before it would bring. Nothing changed.
 
 BEHIND. Every seren service on every online node, its version, and the
 newest release the index has (cached; the updates: block says where and how
-often).
+often). With it, per service, the shared libraries its venv runs (seren-sinew
+and seren-meninges, `libs`) against the index too: a service can be on its
+newest and still run a stale library, and a run that moves only what is
+behind would not touch it. Chad, 20 Oct 2026: click a service, see its own
+version and the libraries' with their newest, and update any of the three
+from there. A library alone is a run of that one service pinned to the
+version it already has, with `with` naming the library: pip moves the
+library and leaves the service where it is, and the service is still
+restarted so it runs the new code.
 
 The runs are kept as JSON beside the config (upgrades/<run id>.json) so a
 restart, of Lodestar above all, does not lose one.
@@ -288,8 +296,10 @@ class UpgradeService:
                 continue
             for name, d in sorted(svcs.items()):
                 if isinstance(d, dict):
+                    libs = d.get("libs") if isinstance(d.get("libs"), dict) else {}
                     rows.append({"node": node, "service": name, "package": d.get("package"),
-                                 "version": d.get("version"), "needs": d.get("needs") or []})
+                                 "version": d.get("version"), "needs": d.get("needs") or [],
+                                 "libs": {str(k): (str(v) if v else None) for k, v in libs.items()}})
         return rows, unknown
 
     @staticmethod
@@ -302,19 +312,31 @@ class UpgradeService:
         rows, unknown = await self.versions()
         rows = [r for r in rows if (not nodes or r["node"] in nodes) and wanted(r["service"], services)]
         latest: dict[str, tuple[Optional[str], Optional[str]]] = {}
-        for pkg in sorted({r["package"] for r in rows if r.get("package")}):
+        wanted_pkgs = {r["package"] for r in rows if r.get("package")}
+        wanted_pkgs |= {lib for r in rows for lib in (r.get("libs") or {})}
+        for pkg in sorted(wanted_pkgs):
             latest[pkg] = await self.latest(pkg, refresh)
-        out, behind = [], []
+        out, behind, libs_behind = [], [], []
         for r in sorted(rows, key=lambda r: (r["node"], rank(r["service"]), r["service"])):
             new, why = latest.get(r.get("package"), (None, "no package"))
             moves = _newer(new, r.get("version"))
             row = {**r, "latest": new, "behind": moves}
             if why:
                 row["latest_error"] = why
+            # The libraries the venv runs, each against the index. Not in
+            # `behind`: a run moves services, and the libraries ride along.
+            row["libs"] = {}
+            for lib, have in (r.get("libs") or {}).items():
+                lib_new, lib_why = latest.get(lib, (None, "no package"))
+                lib_moves = _newer(lib_new, have)
+                row["libs"][lib] = {"version": have, "latest": lib_new, "behind": lib_moves,
+                                    **({"latest_error": lib_why} if lib_why else {})}
+                if lib_moves:
+                    libs_behind.append(f"{r['node']}/{r['service']} {lib} {have} -> {lib_new}")
             out.append(row)
             if moves:
                 behind.append(f"{r['node']}/{r['service']} {r['version']} -> {new}")
-        return {"ok": True, "services": out, "behind": behind, "unknown_nodes": unknown}
+        return {"ok": True, "services": out, "behind": behind, "libs_behind": libs_behind, "unknown_nodes": unknown}
 
     # ── dry run ───────────────────────────────────────────────────────────
     async def plan(self, nodes=None, services=None, version=None, with_=None, versions=None,

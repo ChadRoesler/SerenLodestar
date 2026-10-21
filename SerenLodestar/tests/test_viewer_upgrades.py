@@ -75,3 +75,18 @@ def test_the_shell_serves_the_fragments(client):
     r = client.get("/viewer")
     assert r.status_code == 200
     assert 'data-tab="upgrades"' in r.text and 'id="upgrades"' in r.text
+
+
+def test_the_open_steps_log_follows_the_run_until_it_has_ended():
+    """Chad, 20 Oct 2026: "log portion of the modal ... is not refreshing as
+    new data comes in". The poll re-asks the open step quietly (no
+    placeholder, scroll kept) while the step or its job is still going."""
+    script = (UI / "scripts.js").read_text(encoding="utf-8")
+    poll = script[script.index("async function refreshUpgrades"):script.index("function renderBehind")]
+    assert "showStepLog(fresh.id, runModal.step, { quiet: true })" in poll
+    assert "!runModal.logSettled" in poll, "a step that has ended is not asked again every five seconds"
+    show = script[script.index("async function showStepLog"):script.index("function initRunModal")]
+    assert "if (!quiet) log.innerHTML" in show, "quiet: the log is not blanked while the node is asked"
+    assert "if (runModal.step !== index || !isRunOpen()) return;" in show, "a late answer for another step is dropped"
+    assert "runModal.logSettled = !STEP_LIVE.includes(step.state) && !(out.job && out.job.terminal === false)" in show
+    assert "if (atBottom) log.scrollTop = log.scrollHeight" in show

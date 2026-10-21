@@ -52,7 +52,8 @@ class FakeAgent:
         self.ver = {s: "5.0.0" for s in services if s.startswith("seren-") and s not in self.not_upgradable}
 
     async def get_upgrade_versions_async(self):
-        return {s: {"package": s.rsplit("-", 1)[0], "version": v, "needs": []} for s, v in self.ver.items()}
+        return {s: {"package": s.rsplit("-", 1)[0], "version": v, "needs": [],
+                    "libs": {"seren-sinew": "5.0.0", "seren-meninges": "4.9.0"}} for s, v in self.ver.items()}
 
     async def start_upgrade_async(self, svc, body, timeout=900.0):
         if body.get("dry_run"):
@@ -291,6 +292,39 @@ def test_behind_is_every_service_against_the_index(tmp_path):
                     ("nuc", "seren-loci-wren"): ("5.0.0", "5.0.0", False),
                     ("nuc", "seren-observatory-wren"): ("5.0.0", "5.0.1", True)}
     assert "nuc/seren-memory-wren 5.0.0 -> 5.2.0" in out["behind"] and out["unknown_nodes"] == []
+
+
+def test_behind_carries_the_libraries_each_venv_runs_against_the_index(tmp_path):
+    """Chad, 20 Oct 2026: click a service, see its own version and the sinew
+    and meninges it runs with their newest. The libraries are not in
+    `behind` (a run moves services; the libraries ride along), they have
+    their own list."""
+    svc, nuc, nano = _world(tmp_path, newest={"seren-memory": "5.0.0", "seren-meninges": "5.0.0", "seren-sinew": "5.0.0"})
+    out = asyncio.run(svc.behind(nodes=["nuc"], services=["memory"]))
+    (row,) = out["services"]
+    assert row["behind"] is False, "memory itself is on its newest"
+    assert row["libs"] == {"seren-sinew": {"version": "5.0.0", "latest": "5.0.0", "behind": False},
+                           "seren-meninges": {"version": "4.9.0", "latest": "5.0.0", "behind": True}}
+    assert out["behind"] == [] and out["libs_behind"] == ["nuc/seren-memory-wren seren-meninges 4.9.0 -> 5.0.0"]
+
+
+def test_a_library_alone_is_a_run_of_its_service_pinned_where_it_is(tmp_path):
+    """The Update button on a library row: the service pinned to the version
+    it has, `with` naming the library. pip moves the library, the service
+    stays, and the Observatory still restarts it so it runs the new code."""
+    svc, nuc, nano = _world(tmp_path)
+
+    async def go():
+        status, out = svc.start(nodes=["nuc"], services=["memory"], version="5.0.0", with_=["seren-meninges"],
+                                only_behind=False, reason="pkg modal")
+        assert status == 202, out
+        await _until_done(svc)
+        return out
+    out = asyncio.run(go())
+    (started,) = nuc.started
+    assert started[0] == "seren-memory-wren"
+    assert started[1]["version"] == "5.0.0" and started[1]["with"] == ["seren-meninges"]
+    assert svc.load(out["run"]["id"])["steps"][0]["state"] == "done"
 
 
 def test_the_routes_and_the_tools(tmp_path):
