@@ -139,6 +139,28 @@ class UpdatesConfig:
 
 
 @dataclass
+class CarabinersConfig:
+    """Where the Rack's .kbh files come from (seren_lodestar.shelf). Lodestar
+    pulls a release onto its shelf and hands the file to a node's
+    Observatory; the nodes never reach the internet."""
+    release_repo: str = "chadroesler/SerenCarabiners"
+    #: The folder of <carabiner>.kbh files. Blank = `kbh-shelf` beside the
+    #: config file, else ~/seren-lodestar/kbh-shelf.
+    shelf: str = ""
+    github_api: str = "https://api.github.com"
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "CarabinersConfig":
+        d = d or {}
+        default = cls()
+        return cls(
+            release_repo=str(d.get("release_repo", default.release_repo) or ""),
+            shelf=str(d.get("shelf", "") or ""),
+            github_api=str(d.get("github_api", "") or default.github_api),
+        )
+
+
+@dataclass
 class RemoteMcpConfig:
     """One remote MCP server whose tools the chat loop and scheduler may call.
 
@@ -300,6 +322,7 @@ class LodestarConfig:
     tooling: ToolingConfig = field(default_factory=ToolingConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
     ripple: RippleConfig = field(default_factory=RippleConfig)
+    carabiners: CarabinersConfig = field(default_factory=CarabinersConfig)
     backup: "BackupConfig" = field(default_factory=lambda: _backup_cfg())
     orchestration: "OrchestrationConfig" = field(default_factory=lambda: _orchestration_cfg())
     #: The yaml this config was read from, or None when running on defaults.
@@ -330,6 +353,16 @@ def resolved_backup_dir(cfg: "LodestarConfig") -> Path:
     if cfg.config_path:
         return Path(cfg.config_path).resolve().parent / "backups"
     return Path.home() / "seren-lodestar" / "backups"
+
+
+def resolved_shelf_dir(cfg: "LodestarConfig") -> Path:
+    """Where the Rack's .kbh files are: carabiners.shelf, else `kbh-shelf`
+    beside the config file, else ~/seren-lodestar/kbh-shelf."""
+    if cfg.carabiners.shelf.strip():
+        return Path(_expand_tilde(cfg.carabiners.shelf.strip())).resolve()
+    if cfg.config_path:
+        return Path(cfg.config_path).resolve().parent / "kbh-shelf"
+    return Path.home() / "seren-lodestar" / "kbh-shelf"
 
 
 def _expand_tilde(path: str) -> str:
@@ -432,6 +465,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
     tooling = ToolingConfig.from_dict(data.get("tooling"))
     chat = ChatConfig.from_dict(data.get("chat"))
     ripple = RippleConfig.from_dict(data.get("ripple"))
+    carabiners = CarabinersConfig.from_dict(data.get("carabiners"))
     backup = _backup_cfg(data.get("backup"))
     orchestration = _orchestration_cfg(data.get("orchestration"))
 
@@ -445,6 +479,7 @@ def load_config(path: Optional[str] = None) -> LodestarConfig:
         tooling=tooling,
         chat=chat,
         ripple=ripple,
+        carabiners=carabiners,
         backup=backup,
         orchestration=orchestration,
         config_path=found_path,

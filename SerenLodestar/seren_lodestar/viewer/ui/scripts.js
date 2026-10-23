@@ -1814,6 +1814,63 @@ async function refreshRack() {
     if (data) { _rack = data; renderRack(data); }
 }
 
+// The files Lodestar hands out (23 Oct 2026): pulled from a release onto its
+// shelf, sent to a node's Observatory, swapped in there by the carabiner
+// itself - belay before and after, the old one put back if anything lets go.
+function renderShelf(shelf) {
+    const el = document.getElementById('rack-shelf');
+    if (!shelf.length) {
+        el.innerHTML = 'Nothing here yet. Get the newest release, or put a .kbh in Lodestar\'s kbh-shelf folder.';
+        return;
+    }
+    el.innerHTML = '<div class="rack-shelf-list">' + shelf.map(s =>
+        `<div><span class="rack-mono">${escapeHtml(s.carabiner)}.kbh ${escapeHtml(s.version || '?')}</span>
+         · ${escapeHtml(s.source || 'by hand')}</div>`).join('') + '</div>';
+}
+
+const RACK_UPDATE = {
+    behind: ['wait', 'a newer one is on the shelf'],
+    current: ['ok', 'up to date'],
+    ahead: ['ok', 'newer than the shelf'],
+    different: ['wait', 'a different build from the shelf'],
+};
+
+function rackUpdateHtml(n, c) {
+    const u = RACK_UPDATE[c.update];
+    if (!u) return '';
+    const id = `${n.node}/${c.carabiner}`;
+    const offer = c.update === 'behind' || c.update === 'different' || c.update === 'ahead';
+    const verb = c.update === 'behind' ? `update to ${c.shelf_version}` : `swap in ${c.shelf_version}`;
+    return `<div class="rack-update"><span class="upg-state ${u[0]}">${escapeHtml(u[1])}</span>
+      ${offer ? `<button class="upg-btn" data-rack-upgrade="${escapeHtml(id)}" data-older="${c.update === 'ahead' ? 1 : ''}"
+        data-from="${escapeHtml(c.version || 'unknown')}" data-to="${escapeHtml(c.shelf_version || '')}">${escapeHtml(verb)}</button>` : ''}</div>`;
+}
+
+async function rackUpgrade(btn) {
+    const [node, name] = btn.dataset.rackUpgrade.split('/');
+    const older = !!btn.dataset.older;
+    const ask = `Swap ${name}.kbh on ${node} from ${btn.dataset.from} to ${btn.dataset.to}?\n\n`
+        + `It checks the carabiner holds before and after, and puts the old one back if anything that held lets go.`
+        + (older ? `\n\nThe shelf's is OLDER than what ${node} runs.` : '');
+    if (!confirm(ask)) return;
+    btn.disabled = true;
+    btn.textContent = 'swapping…';
+    rackFlash(`${node}: swapping in ${name}.kbh ${btn.dataset.to}…`, 'info');
+    const r = await hostApi(`/api/v1/carabiner/${encodeURIComponent(name)}/upgrade`,
+        { method: 'POST', json: { node, downgrade: older, reason: 'from the Rack' } });
+    if (r?.ok && r.changed) {
+        rackFlash(`${node}: ${name}.kbh ${r.was || '?'} → ${r.now}${r.bootstrap ? ' (its first self-upgrade)' : ''}. The old one is kept beside it.`, 'ok');
+    } else if (r?.ok) {
+        rackFlash(`${node}: ${name}.kbh was already ${r.now || 'that build'}.`, 'info');
+    } else if (r?.rolled_back) {
+        const lost = Object.values(r.belay || {}).flatMap(b => b.lost || []);
+        rackFlash(`${node}: the new ${name}.kbh let go of ${lost.join(', ') || 'what held'}, so the old one is back.`, 'error');
+    } else {
+        rackFlash(`${node}: ${r?.error || 'no answer'}`, 'error');
+    }
+    await refreshRack();
+}
+
 function rackSummary(manifest) {
     const f = Object.fromEntries((manifest?.fields || []).map(x => [x.key, x]));
     const said = [];
@@ -1833,6 +1890,7 @@ function renderRack(data) {
         ? `Seren's wakes go to <b>${escapeHtml(target)}</b>${target === 'local' ? " (Lodestar's own box)" : ''}. `
           + `<span class="rack-dim">Set by ripple.target in Lodestar's config.</span>`
         : `Wakes are off: ripple.target in Lodestar's config is empty.`;
+    renderShelf(data.shelf || []);
     const grid = document.getElementById('rack-grid');
     const nodes = data.nodes || [];
     if (!nodes.length) { grid.innerHTML = '<div class="rack-note">no nodes in this cluster</div>'; return; }
@@ -1848,8 +1906,9 @@ function renderRack(data) {
             const id = `${n.node}/${c.carabiner}`;
             return `<div class="rack-row">
               <div class="rack-row-head"><strong>${escapeHtml(name)}</strong>
-                <span class="rack-mono">${escapeHtml(c.carabiner)}.kbh ${escapeHtml(m?.version || '')}</span></div>
+                <span class="rack-mono">${escapeHtml(c.carabiner)}.kbh ${escapeHtml(c.version || m?.version || '')}</span></div>
               <div><span class="upg-state wait" data-belay="${escapeHtml(id)}">belay?</span></div>
+              ${rackUpdateHtml(n, c)}
               ${m ? `<div class="rack-note">${escapeHtml(rackSummary(m))}</div>`
                   : `<div class="rack-note bad">${escapeHtml(c.error || (c.configured ? 'did not answer' : 'clipped, but has no settings file yet'))}</div>`}
               <div class="rack-actions">
@@ -2045,6 +2104,19 @@ function initRack() {
         if (open) openRack(open.dataset.rackOpen);
         const belay = e.target.closest('[data-rack-belay]');
         if (belay) rackBelay(belay.dataset.rackBelay);
+        const upgrade = e.target.closest('[data-rack-upgrade]');
+        if (upgrade) rackUpgrade(upgrade);
+    });
+    document.getElementById('rack-fetch').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        rackFlash('asking GitHub for the newest carabiner release…', 'info');
+        try {
+            const r = await hostApi('/api/v1/rack/shelf/fetch', { method: 'POST', json: {} });
+            const got = (r?.fetched || []).map(f => f.carabiner + '.kbh').join(', ');
+            if (r?.ok) rackFlash(`${r.release}: ${got || 'nothing new'} on the shelf, each checked against its sha256.`, 'ok');
+            else rackFlash(r?.error || 'no answer', 'error');
+            await refreshRack();
+        } finally { e.target.disabled = false; }
     });
     const body = document.getElementById('rack-body');
     body.addEventListener('change', rackInput);

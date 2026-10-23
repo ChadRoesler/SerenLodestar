@@ -980,6 +980,10 @@
 *  and buttons are the Upgrades tab's; what is new is the form.
 * --------------------------------------------------------------------- */
 .rack-wakes { margin-bottom: var(--gap); }
+.rack-shelf { margin-bottom: var(--gap); }
+.rack-shelf h3 { margin: 0; }
+.rack-shelf-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.rack-update { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-mid); }
 .rack-dim { font-size: 12px; color: var(--text-mid); }
     .rack-dim b { color: var(--text-hi); font-weight: 500; }
 .rack-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--gap); align-items: start; }

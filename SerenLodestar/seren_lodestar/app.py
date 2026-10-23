@@ -236,6 +236,11 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
                                             log_fn=lambda m: log.info(f"[upgrade] {m}"))
         _resume_task = asyncio.ensure_future(app.state.upgrades.resume())
 
+        # The Rack's .kbh files: pulled here, handed to the nodes (seren_lodestar.shelf).
+        from .config import resolved_shelf_dir
+        from .shelf import Shelf
+        app.state.shelf = Shelf(resolved_shelf_dir(cfg), cfg.carabiners.release_repo, cfg.carabiners.github_api)
+
         # Start services
         asyncio.ensure_future(discovery.start())
         log.info("discovery service started")
