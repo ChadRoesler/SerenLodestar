@@ -67,6 +67,7 @@ from .routes import gallery as gallery_routes
 from .routes import agent_update as agent_update_routes
 from .routes import backup as backup_routes
 from .routes import upgrade as upgrade_routes
+from .routes import carabiners as carabiner_routes
 
 from seren_meninges import get_version
 from seren_meninges.updates import updates_payload
@@ -325,6 +326,7 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
     app.include_router(scheduler_routes.router)
     app.include_router(backup_routes.router)
     app.include_router(upgrade_routes.router)
+    app.include_router(carabiner_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(images_routes.router)
     app.include_router(hearing_routes.router)

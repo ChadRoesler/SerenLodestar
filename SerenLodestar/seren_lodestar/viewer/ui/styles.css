@@ -973,3 +973,57 @@
     .run-log-kv { margin-left: 1.5em; white-space: pre-wrap; word-break: break-word; }
         .run-log-kv .run-log-key { display: inline; margin: 0 4px 0 0; }
     .run-log-pre { margin: 2px 0 6px 1.5em; padding: 6px 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; white-space: pre-wrap; word-break: break-word; font: inherit; }
+
+/* ---------------------------------------------------------------------
+*  RACK (22 Oct 2026) - the carabiners clipped on each node, and a sheet
+*  of one carabiner's settings drawn from what it says it has. The cards
+*  and buttons are the Upgrades tab's; what is new is the form.
+* --------------------------------------------------------------------- */
+.rack-wakes { margin-bottom: var(--gap); }
+.rack-dim { font-size: 12px; color: var(--text-mid); }
+    .rack-dim b { color: var(--text-hi); font-weight: 500; }
+.rack-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--gap); align-items: start; }
+.rack-node { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: calc(var(--pad)/2); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .rack-node.offline { opacity: 0.6; }
+.rack-node-name { font-size: 15px; font-weight: 600; color: var(--text-hi); display: flex; align-items: center; gap: 8px; }
+.rack-row { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.rack-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .rack-row-head strong { font-size: 14px; color: var(--text-hi); }
+.rack-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--text-mid); }
+.rack-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.rack-note { font-size: 12px; color: var(--text-mid); }
+    .rack-note.bad { color: var(--status-down); }
+    .rack-note.warn { color: var(--status-warn); }
+
+.rack-modal { width: min(780px, 95vw); height: auto; max-height: 92vh; }
+.rack-body { padding: 0 var(--pad); overflow: auto; flex: 1; min-height: 0; }
+.rack-field { padding: 14px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+    .rack-field:first-child { border-top: none; }
+.rack-field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .rack-field-head label, .rack-field-head .rack-label { font-size: 15px; font-weight: 600; color: var(--text-hi); }
+.rack-help { font-size: 12px; color: var(--text-mid); margin: 0; }
+.rack-refused { font-size: 12px; color: var(--status-down); margin: 0; }
+.rack-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.rack-choice { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-page); cursor: pointer; }
+    .rack-choice.on { border-color: var(--accent); background: var(--bg-row); }
+    .rack-choice input { margin: 3px 0 0; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+    .rack-choice b { display: block; font-size: 14px; color: var(--text-hi); font-weight: 600; }
+    .rack-choice span { font-size: 12px; color: var(--text-mid); }
+.rack-expert { border: 1px solid var(--status-down); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rack-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.rack-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; color: var(--text-mid); background: var(--bg-page); cursor: pointer; }
+    .rack-chip.on { border-color: var(--accent); color: var(--accent); }
+    .rack-chip input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.rack-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.rack-body input[type="text"], .rack-body input[type="number"], .rack-body select, .rack-body textarea {
+    font: inherit; font-size: 14px; color: var(--text-hi); background: var(--bg-page); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0 10px; min-height: 40px; max-width: 100%;
+}
+    .rack-body textarea { width: 100%; padding: 8px 10px; font-family: var(--mono, ui-monospace, monospace); font-size: 13px; line-height: 1.5; resize: vertical; }
+.rack-foot { border-top: 1px solid var(--border); padding: var(--pad); display: flex; flex-direction: column; gap: 8px; background: var(--bg-page); }
+.rack-pending { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text-hi); flex-wrap: wrap; }
+    .rack-pending span:last-child { color: var(--text-mid); }
+.rack-line { font-size: 13px; }
+    .rack-line.ok { color: var(--status-ok); }
+    .rack-line.bad { color: var(--status-warn); }
+.rack-foot-btns { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }

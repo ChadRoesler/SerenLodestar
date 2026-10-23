@@ -159,6 +159,27 @@ class JetsonAgentClient:
             data = {"ok": resp.is_success, "answer": data}
         return resp.status_code, data
 
+    async def carabiner_call_async(self, method: str, path: str, body: Optional[dict[str, Any]] = None,
+                                   timeout: float = 90.0) -> tuple[int, dict[str, Any]]:
+        """A carabiner route on this node's Observatory (seren_sinew.carabiners).
+        Status and body come back as the Observatory gave them, like a
+        ripple's: a carabiner's refusals and "not set up on this node" are the
+        answer. The timeout covers kbh running belay after a change."""
+        try:
+            if method == "POST":
+                resp = await self._client.post(path.lstrip("/"), json=body or {}, timeout=timeout)
+            else:
+                resp = await self._client.get(path.lstrip("/"), timeout=timeout)
+        except Exception as ex:  # noqa: BLE001
+            return 502, {"ok": False, "error": f"the node's Observatory did not answer: {type(ex).__name__}: {ex}"}
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"ok": False, "error": resp.text[:400]}
+        if not isinstance(data, dict):
+            data = {"ok": resp.is_success, "answer": data}
+        return resp.status_code, data
+
     async def start_upgrade_async(self, service: str, body: dict[str, Any],
                                   timeout: float = 900.0) -> tuple[int, dict[str, Any]]:
         """Ask the node's Observatory to upgrade one service (or, with

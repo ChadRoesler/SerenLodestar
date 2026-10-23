@@ -53,6 +53,40 @@
   </div>
 </div>
 
+<!-- The Rack (22 Oct 2026): the carabiners clipped on each node and how each
+     is set. Everything here is /api/v1/rack and /api/v1/carabiner/... (seren_
+     lodestar.routes.carabiners); what a setting means, which values it takes
+     and why one is refused are the carabiner's words, drawn as they come. -->
+<div class="view" id="rack">
+  <div class="upg-bar">
+    <div class="upg-title">
+      <strong>Rack</strong>
+      <span class="upg-sub">the AI apps clipped on each box, and how each one is set</span>
+    </div>
+    <div class="upg-actions">
+      <button class="upg-btn" id="rack-refresh" title="ask every node's Observatory again">↻ ask the nodes again</button>
+    </div>
+  </div>
+  <div class="upg-flash" id="rack-flash" role="status" aria-live="polite"></div>
+  <section class="upg-card rack-wakes">
+    <h3>Wakes</h3>
+    <div id="rack-wakes" class="rack-dim">loading…</div>
+  </section>
+  <div class="rack-grid" id="rack-grid"></div>
+</div>
+
+<!-- One carabiner's settings, drawn from what it says it has. -->
+<div class="modal-backdrop" id="rack-backdrop">
+  <div class="modal rack-modal" role="dialog" aria-modal="true" aria-label="carabiner settings">
+    <div class="modal-header">
+      <div class="modal-header-fields" id="rack-header-fields"></div>
+      <button class="modal-close" id="rack-close" aria-label="Close">✕</button>
+    </div>
+    <div class="rack-body" id="rack-body"></div>
+    <div class="rack-foot" id="rack-foot"></div>
+  </div>
+</div>
+
 <!-- Settings modal. The token lives in the shell's 🔑 modal, and same-origin
      serving means there's no Lodestar-URL field. Updating is the Upgrades
      tab's job: the old "update all nodes" pushed a tarball of the

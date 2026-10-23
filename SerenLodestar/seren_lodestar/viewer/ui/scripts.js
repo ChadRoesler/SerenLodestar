@@ -1791,9 +1791,294 @@ function initUpgrades() {
 }
 
 // ----------------------------------------------------------------------
+// RACK (22 Oct 2026): the carabiners clipped on each node, and a sheet of
+// one carabiner's settings. The sheet is drawn from the fields the carabiner
+// sends (seren_sinew.carabiners, kbh.schema): their labels, their help, the
+// values they take. Nothing here knows what a Claude Code permission mode
+// is; a new harness is a new .kbh and this page draws it. A change goes to
+// the node's Observatory, the carabiner checks every value and writes all or
+// nothing, and its refusals come back under the field they are about.
+// ----------------------------------------------------------------------
+let _rack = null;
+const rackModal = { open: false, node: '', name: '', manifest: null, draft: {}, expert: false, result: null, busy: false };
+
+function rackFlash(msg, type) {
+    const el = document.getElementById('rack-flash');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'upg-flash' + (msg ? ` visible ${type || 'info'}` : '');
+}
+
+async function refreshRack() {
+    const data = await hostApi('/api/v1/rack');
+    if (data) { _rack = data; renderRack(data); }
+}
+
+function rackSummary(manifest) {
+    const f = Object.fromEntries((manifest?.fields || []).map(x => [x.key, x]));
+    const said = [];
+    for (const key of ['session.permission_mode', 'session.model']) {
+        const field = f[key];
+        if (!field || field.value === '' || field.value == null) continue;
+        const c = (field.choices || []).find(c => c.value === field.value);
+        said.push(c ? c.label : String(field.value));
+    }
+    if (f.project?.value) said.push('works in ' + f.project.value);
+    return said.join(' · ') || 'on its own defaults';
+}
+
+function renderRack(data) {
+    const target = data.wakes?.target || '';
+    document.getElementById('rack-wakes').innerHTML = target
+        ? `Seren's wakes go to <b>${escapeHtml(target)}</b>${target === 'local' ? " (Lodestar's own box)" : ''}. `
+          + `<span class="rack-dim">Set by ripple.target in Lodestar's config.</span>`
+        : `Wakes are off: ripple.target in Lodestar's config is empty.`;
+    const grid = document.getElementById('rack-grid');
+    const nodes = data.nodes || [];
+    if (!nodes.length) { grid.innerHTML = '<div class="rack-note">no nodes in this cluster</div>'; return; }
+    grid.innerHTML = nodes.map(n => {
+        const led = !n.online ? 'down' : n.set_up ? 'ok' : 'warn';
+        let inner;
+        if (!n.online) inner = '<div class="rack-note">offline</div>';
+        else if (!n.set_up) inner = `<div class="rack-note warn">${escapeHtml(n.error || 'carabiners are not set up on this node')}</div>`;
+        else if (!n.carabiners.length) inner = '<div class="rack-note">nothing clipped on this box yet</div>';
+        else inner = n.carabiners.map(c => {
+            const m = c.manifest;
+            const name = m?.display || c.carabiner;
+            const id = `${n.node}/${c.carabiner}`;
+            return `<div class="rack-row">
+              <div class="rack-row-head"><strong>${escapeHtml(name)}</strong>
+                <span class="rack-mono">${escapeHtml(c.carabiner)}.kbh ${escapeHtml(m?.version || '')}</span></div>
+              <div><span class="upg-state wait" data-belay="${escapeHtml(id)}">belay?</span></div>
+              ${m ? `<div class="rack-note">${escapeHtml(rackSummary(m))}</div>`
+                  : `<div class="rack-note bad">${escapeHtml(c.error || (c.configured ? 'did not answer' : 'clipped, but has no settings file yet'))}</div>`}
+              <div class="rack-actions">
+                <button class="upg-btn" data-rack-open="${escapeHtml(id)}" ${m ? '' : 'disabled'}>settings</button>
+                <button class="upg-btn" data-rack-belay="${escapeHtml(id)}">check it holds</button>
+              </div></div>`;
+        }).join('');
+        return `<section class="rack-node${n.online ? '' : ' offline'}">
+          <div class="rack-node-name"><span class="led ${led}"></span>${escapeHtml(n.node)}</div>${inner}</section>`;
+    }).join('');
+}
+
+async function rackBelay(id) {
+    const [node, name] = id.split('/');
+    const pill = document.querySelector(`[data-belay="${CSS.escape(id)}"]`);
+    if (pill) { pill.className = 'upg-state run'; pill.textContent = 'on belay?'; }
+    const b = await hostApi(`/api/v1/carabiner/${encodeURIComponent(name)}/belay?node=${encodeURIComponent(node)}`);
+    if (!pill) return;
+    const let_go = (b?.checks || []).filter(c => c.status === 'LET GO');
+    pill.className = 'upg-state ' + (b?.ok ? 'ok' : 'bad');
+    pill.textContent = b?.ok ? 'belay on' : let_go.length ? `${let_go.length} let go` : 'no answer';
+    pill.title = b?.ok ? 'every clip holds' : (let_go.map(c => `${c.verb} / ${c.name}: ${c.why}`).join('\n') || b?.error || '');
+}
+
+async function openRack(id) {
+    const [node, name] = id.split('/');
+    Object.assign(rackModal, { open: true, node, name, manifest: null, draft: {}, expert: false, result: null, busy: false });
+    document.getElementById('rack-backdrop').classList.add('visible');
+    document.getElementById('rack-body').innerHTML = '<p class="rack-help">asking the carabiner…</p>';
+    document.getElementById('rack-foot').innerHTML = '';
+    const m = await hostApi(`/api/v1/carabiner/${encodeURIComponent(name)}/settings?node=${encodeURIComponent(node)}`);
+    if (!rackModal.open || rackModal.name !== name) return;
+    rackModal.manifest = m;
+    renderRackModal();
+}
+
+function closeRack() {
+    rackModal.open = false;
+    document.getElementById('rack-backdrop').classList.remove('visible');
+}
+
+function rackValue(f) {
+    return Object.prototype.hasOwnProperty.call(rackModal.draft, f.key) ? rackModal.draft[f.key] : f.value;
+}
+
+function rackChanged(f) {
+    return Object.prototype.hasOwnProperty.call(rackModal.draft, f.key)
+        && JSON.stringify(rackModal.draft[f.key]) !== JSON.stringify(f.value);
+}
+
+function rackShown(f, v) {
+    if (Array.isArray(v)) return v.length ? v.join(', ') : 'nothing';
+    if (f.kind === 'note') return 'edited';
+    const c = (f.choices || []).find(c => c.value === v);
+    return c ? c.label : (v === '' || v == null ? '(blank)' : `${v}${f.unit ? ' ' + f.unit : ''}`);
+}
+
+function rackFieldHtml(f, i) {
+    const v = rackValue(f);
+    const id = `rack-f${i}`;
+    const refused = rackModal.result?.refused?.[f.key];
+    let control = '';
+    if (f.kind === 'choice' && !f.free_text) {
+        const opts = (f.choices || []).map(c => `
+          <label class="rack-choice${v === c.value ? ' on' : ''}"><input type="radio" name="${id}" data-key="${escapeHtml(f.key)}"
+            value="${escapeHtml(c.value)}" ${v === c.value ? 'checked' : ''}><span><b>${escapeHtml(c.label)}</b>${escapeHtml(c.help || '')}</span></label>`).join('');
+        const expert = (f.expert || []).map(x => `
+          <label class="rack-choice${v === x ? ' on' : ''}"><input type="radio" name="${id}" data-key="${escapeHtml(f.key)}" value="${escapeHtml(x)}"
+            ${v === x ? 'checked' : ''} ${rackModal.expert ? '' : 'disabled'}><span><b>${escapeHtml(x)}</b>runs anything without asking. Only for a box you would happily wipe.</span></label>`).join('');
+        control = `<div class="rack-choices" role="radiogroup" aria-label="${escapeHtml(f.label)}">${opts}</div>`
+            + (expert ? `<details class="rack-expert"${rackModal.expert || (f.expert || []).includes(v) ? ' open' : ''}><summary class="rack-help">Expert setting</summary>
+                <label class="rack-inline rack-help"><input type="checkbox" data-rack-expert ${rackModal.expert ? 'checked' : ''}> I understand, offer it</label>${expert}</details>` : '');
+    } else if (f.kind === 'choice') {
+        const known = (f.choices || []).some(c => c.value === v);
+        control = `<div class="rack-inline"><select id="${id}" data-key="${escapeHtml(f.key)}">`
+            + (f.choices || []).map(c => `<option value="${escapeHtml(c.value)}" ${v === c.value ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join('')
+            + (known ? '' : `<option value="${escapeHtml(v)}" selected>${escapeHtml(v)}</option>`)
+            + `</select><input type="text" data-key="${escapeHtml(f.key)}" data-free="1" placeholder="or type an id" aria-label="${escapeHtml(f.label)}: type an id"></div>`;
+    } else if (f.kind === 'tools') {
+        const list = Array.isArray(v) ? v : [];
+        const sugg = (f.suggestions || []);
+        const extra = list.filter(t => !sugg.some(s => s.value === t));
+        control = `<div class="rack-chips" role="group" aria-label="${escapeHtml(f.label)}">`
+            + sugg.map(s => `<label class="rack-chip${list.includes(s.value) ? ' on' : ''}" title="${escapeHtml(s.value)}"><input type="checkbox"
+                data-key="${escapeHtml(f.key)}" data-tool="${escapeHtml(s.value)}" ${list.includes(s.value) ? 'checked' : ''}>${escapeHtml(s.label)}</label>`).join('')
+            + extra.map(t => `<label class="rack-chip on rack-mono"><input type="checkbox" data-key="${escapeHtml(f.key)}" data-tool="${escapeHtml(t)}" checked>${escapeHtml(t)}</label>`).join('')
+            + `</div><div class="rack-inline"><input type="text" id="${id}" placeholder="Bash(git status:*)" aria-label="a tool rule">
+               <button class="upg-btn" data-rack-addtool="${escapeHtml(f.key)}" data-from="${id}">add</button></div>`;
+    } else if (f.kind === 'number') {
+        control = `<div class="rack-inline"><input type="number" id="${id}" data-key="${escapeHtml(f.key)}" value="${escapeHtml(v ?? '')}"
+            ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''}><span class="rack-help">${escapeHtml(f.unit || '')}</span></div>`;
+    } else if (f.kind === 'note') {
+        control = `<textarea id="${id}" rows="8" data-key="${escapeHtml(f.key)}">${escapeHtml(v ?? '')}</textarea>`;
+    } else {
+        control = `<input type="text" id="${id}" data-key="${escapeHtml(f.key)}" value="${escapeHtml(v ?? '')}">`;
+    }
+    const labelFor = ['number', 'note', 'text', 'folder'].includes(f.kind) ? `<label for="${id}">` : '<span class="rack-label">';
+    return `<div class="rack-field">
+      <div class="rack-field-head">${labelFor}${escapeHtml(f.label)}${labelFor.startsWith('<label') ? '</label>' : '</span>'}
+        <span class="rack-mono">${escapeHtml(f.key)}</span></div>
+      ${f.help ? `<p class="rack-help">${escapeHtml(f.help)}</p>` : ''}
+      ${control}
+      ${refused ? `<p class="rack-refused">${escapeHtml(refused)}</p>` : ''}</div>`;
+}
+
+function renderRackModal() {
+    const m = rackModal.manifest;
+    const fields = document.getElementById('rack-header-fields');
+    const body = document.getElementById('rack-body');
+    if (!m || !m.ok) {
+        fields.innerHTML = '';
+        body.innerHTML = `<p class="rack-refused" style="padding:14px 0">${escapeHtml(m?.error || 'the carabiner did not answer')}</p>`;
+        return;
+    }
+    fields.innerHTML = [['Carabiner', m.display || m.carabiner], ['Box', rackModal.node], ['Version', m.version]]
+        .map(([l, v]) => `<div class="modal-header-field"><div class="modal-header-label">${escapeHtml(l)}</div>
+                           <div class="modal-header-value">${escapeHtml(v || '—')}</div></div>`).join('');
+    body.innerHTML = (m.fields || []).map(rackFieldHtml).join('')
+        + ((m.connections || []).length ? `<div class="rack-field"><div class="rack-field-head"><span class="rack-label">Connected to Seren</span></div>
+            ${(m.connections || []).map(c => `<div class="rack-pending"><span>${escapeHtml(c.name)}</span>
+              <span class="rack-mono">${escapeHtml(c.where)} · token ${escapeHtml(c.token)}</span></div>`).join('')}
+            <p class="rack-help">Keys stay on the box and are never shown here.</p></div>` : '');
+    renderRackFoot();
+}
+
+function renderRackFoot() {
+    const m = rackModal.manifest;
+    const changed = (m?.fields || []).filter(rackChanged);
+    const r = rackModal.result;
+    let html = '';
+    if (changed.length) {
+        html += changed.map(f => `<div class="rack-pending"><span>${escapeHtml(f.label)}: ${escapeHtml(rackShown(f, rackValue(f)))}</span>
+            <span>counts from the ${escapeHtml(String(f.applies || 'next_session').replace('_', ' '))}</span></div>`).join('');
+    } else if (!r) {
+        html += `<div class="rack-help">Nothing changed yet. The carabiner checks every change before it counts.</div>`;
+    }
+    if (r && !r.ok) html += `<div class="rack-line bad">${escapeHtml(r.error || 'nothing was written')}</div>`;
+    if (r && r.ok) {
+        html += (r.belay || []).map(l => `<div class="rack-line ${l.ok ? 'ok' : 'bad'}">${l.ok ? '✓' : '!'} ${escapeHtml(l.check)}${l.said ? ': ' + escapeHtml(l.said) : ''}</div>`).join('');
+        html += `<div class="upg-flash visible ${r.belay_ok === false ? 'err' : 'ok'}">${r.belay_ok === false
+            ? 'Written, but something let go: see above.' : 'Belay on. Written: ' + escapeHtml((r.applied || []).join(', '))}</div>`;
+    }
+    html += `<div class="rack-foot-btns"><button class="upg-btn" id="rack-cancel">close</button>
+             <button class="upg-btn upg-go" id="rack-save" ${changed.length && !rackModal.busy ? '' : 'disabled'}>${rackModal.busy ? 'checking…' : 'save and check'}</button></div>`;
+    document.getElementById('rack-foot').innerHTML = html;
+}
+
+async function saveRack() {
+    const m = rackModal.manifest;
+    const values = {};
+    for (const f of (m?.fields || []).filter(rackChanged)) values[f.key] = rackValue(f);
+    rackModal.busy = true;
+    renderRackFoot();
+    const r = await hostApi(`/api/v1/carabiner/${encodeURIComponent(rackModal.name)}/settings`,
+                            { method: 'POST', json: { node: rackModal.node, values, expert: rackModal.expert } });
+    rackModal.busy = false;
+    rackModal.result = r || { ok: false, error: 'Lodestar did not answer' };
+    if (r && r.ok) {
+        const fresh = await hostApi(`/api/v1/carabiner/${encodeURIComponent(rackModal.name)}/settings?node=${encodeURIComponent(rackModal.node)}`);
+        if (fresh) rackModal.manifest = fresh;
+        rackModal.draft = {};
+        refreshRack();
+    }
+    renderRackModal();
+}
+
+function rackInput(e) {
+    const el = e.target;
+    const key = el.dataset.key;
+    if (el.matches('[data-rack-expert]')) { rackModal.expert = el.checked; renderRackModal(); return; }
+    if (!key) return;
+    const f = (rackModal.manifest?.fields || []).find(x => x.key === key);
+    if (!f) return;
+    if (el.dataset.tool !== undefined) {
+        const list = [...(rackValue(f) || [])].filter(t => t !== el.dataset.tool);
+        if (el.checked) list.push(el.dataset.tool);
+        rackModal.draft[key] = list;
+        renderRackModal();
+        return;
+    }
+    if (el.dataset.free) { if (el.value.trim()) rackModal.draft[key] = el.value.trim(); renderRackFoot(); return; }
+    rackModal.draft[key] = f.kind === 'number' ? (el.value === '' ? '' : Number(el.value)) : el.value;
+    if (el.type === 'radio' || el.tagName === 'SELECT') renderRackModal(); else renderRackFoot();
+}
+
+function initRack() {
+    document.getElementById('rack-refresh').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        try { await refreshRack(); } finally { e.target.disabled = false; }
+    });
+    document.getElementById('rack-grid').addEventListener('click', (e) => {
+        const open = e.target.closest('[data-rack-open]');
+        if (open) openRack(open.dataset.rackOpen);
+        const belay = e.target.closest('[data-rack-belay]');
+        if (belay) rackBelay(belay.dataset.rackBelay);
+    });
+    const body = document.getElementById('rack-body');
+    body.addEventListener('change', rackInput);
+    body.addEventListener('input', (e) => { if (e.target.matches('textarea, input[type="text"], input[type="number"]')) rackInput(e); });
+    body.addEventListener('click', (e) => {
+        const add = e.target.closest('[data-rack-addtool]');
+        if (!add) return;
+        const box = document.getElementById(add.dataset.from);
+        const rule = (box?.value || '').trim();
+        const f = (rackModal.manifest?.fields || []).find(x => x.key === add.dataset.rackAddtool);
+        if (!rule || !f) return;
+        const list = [...(rackValue(f) || [])];
+        if (!list.includes(rule)) list.push(rule);
+        rackModal.draft[f.key] = list;
+        renderRackModal();
+    });
+    document.getElementById('rack-foot').addEventListener('click', (e) => {
+        if (e.target.id === 'rack-cancel') closeRack();
+        if (e.target.id === 'rack-save') saveRack();
+    });
+    document.getElementById('rack-close').addEventListener('click', closeRack);
+    document.getElementById('rack-backdrop').addEventListener('click', (e) => {
+        if (e.target.id === 'rack-backdrop') closeRack();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && rackModal.open) closeRack();
+    });
+}
+
+// ----------------------------------------------------------------------
 // MAIN
 // ----------------------------------------------------------------------
 initSettings();
+initRack();
 initModal();
 initUpgrades();
 initRunModal();
