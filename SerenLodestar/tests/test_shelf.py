@@ -69,21 +69,21 @@ def test_a_release_lands_only_where_it_matches_its_own_sha256(tmp_path):
     files = {"claude.kbh": kbh_bytes("5.1.4", "abc1234"), "codex.kbh": kbh_bytes("5.1.4", "abc1234"),
              "Not A Name.kbh": b"x"}
     transport, seen = github(files, sha_lies=("codex.kbh",))
-    shelf = Shelf(tmp_path / "shelf", "chad/SerenCarabiners", transport=transport)
+    shelf = Shelf(tmp_path / "shelf", "alice/SerenCarabiners", transport=transport)
     out = asyncio.run(shelf.fetch())
     assert out["release"] == "v5.1.4" and [f["carabiner"] for f in out["fetched"]] == ["claude"]
     assert "codex" in out["refused"] and not out["ok"]
     assert not (tmp_path / "shelf" / "codex.kbh").exists(), "a file that does not match never lands"
     e = shelf.entries()["claude"]
     assert e["version"] == "5.1.4+abc1234" and e["source"] == "release v5.1.4" and e["fetched_at"]
-    assert seen[0] == "https://api.github.com/repos/chad/SerenCarabiners/releases/latest"
+    assert seen[0] == "https://api.github.com/repos/alice/SerenCarabiners/releases/latest"
 
     (tmp_path / "shelf" / "claude.kbh").write_bytes(kbh_bytes("5.1.5", "def5678.dirty.12345678"))
     assert shelf.entries()["claude"]["source"] == "by hand", "a file swapped in by hand says so"
 
 
 def test_a_release_that_cannot_be_read_says_why(tmp_path):
-    shelf = Shelf(tmp_path / "shelf", "chad/SerenCarabiners",
+    shelf = Shelf(tmp_path / "shelf", "alice/SerenCarabiners",
                   transport=httpx.MockTransport(lambda r: httpx.Response(404, json={"message": "Not Found"})))
     out = asyncio.run(shelf.fetch("v9.9.9"))
     assert not out["ok"] and "v9.9.9" in out["error"] and shelf.entries() == {}

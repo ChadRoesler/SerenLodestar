@@ -25,7 +25,7 @@ ENSURE / RELEASE (seren_sinew.orchestration):
 from __future__ import annotations
 
 import ipaddress
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
@@ -350,6 +350,55 @@ async def service_models(request: Request, service: str):
             status_code=503,
         )
     return {"node": agent.node_name, "models": models}
+
+
+# ── The model shelf: what a model service serves, and fetching another ──
+# The Observatory's llama routes (seren_observatory.services.llama), reached
+# through whichever node has the service. A model trained in the Lyceum is
+# fetched by THAT node from a link, so no gigabytes travel through here; this
+# only carries the asking. The node's status codes pass through untouched.
+
+async def _shelf(request: Request, service: str, method: str, sub: str, body=None):
+    cluster: JetsonClusterClient = request.app.state.cluster
+    agent, err = _resolve_agent(cluster, service)
+    if agent is None:
+        return err
+    status, data = await agent.service_models_call_async(method, service, sub, body)
+    if status == 0:
+        return JSONResponse(
+            {"error": "agent_unreachable",
+             "detail": f"agent on '{agent.node_name}' did not respond"},
+            status_code=503,
+        )
+    if status >= 400:
+        return JSONResponse({"node": agent.node_name, **(data if isinstance(data, dict) else {"detail": data})},
+                            status_code=status)
+    return {"node": agent.node_name, **(data if isinstance(data, dict) else {"result": data})}
+
+
+@router.post(f"/api/{API_VERSION}/service/{{service}}/models/fetch")
+async def service_models_fetch(request: Request, service: str, body: dict = Body(...)):
+    return await _shelf(request, service, "POST", "models/fetch", body)
+
+
+@router.get(f"/api/{API_VERSION}/service/{{service}}/models/fetch")
+async def service_models_fetch_status(request: Request, service: str):
+    return await _shelf(request, service, "GET", "models/fetch")
+
+
+@router.delete(f"/api/{API_VERSION}/service/{{service}}/models/{{name}}")
+async def service_models_delete(request: Request, service: str, name: str):
+    return await _shelf(request, service, "DELETE", f"models/{quote(name, safe='')}")
+
+
+@router.get(f"/api/{API_VERSION}/service/{{service}}/model")
+async def service_model(request: Request, service: str):
+    return await _shelf(request, service, "GET", "model")
+
+
+@router.put(f"/api/{API_VERSION}/service/{{service}}/model")
+async def service_model_set(request: Request, service: str, body: dict = Body(...)):
+    return await _shelf(request, service, "PUT", "model", body)
 
 
 # ── Per-node service endpoints ──────────────────────────────────────────

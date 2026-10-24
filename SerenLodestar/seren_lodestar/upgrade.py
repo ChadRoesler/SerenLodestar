@@ -70,6 +70,14 @@ version it already has, with `with` naming the library: pip moves the
 library and leaves the service where it is, and the service is still
 restarted so it runs the new code.
 
+LIBS. A run (or a plan) with `libs` does that for every service it would
+otherwise leave alone as current: a service on its newest whose venv runs a
+stale sinew or meninges is pinned where it is, and `with` names just the
+libraries that are behind (23 Oct 2026: "a check box to allow the upgrading
+of meninges and sinew with it"). A service that is itself behind moves its
+libraries anyway. Off by default: it restarts services whose own code did
+not change.
+
 The runs are kept as JSON beside the config (upgrades/<run id>.json) so a
 restart, of Lodestar above all, does not lose one.
 """
@@ -302,6 +310,16 @@ class UpgradeService:
                                  "libs": {str(k): (str(v) if v else None) for k, v in libs.items()}})
         return rows, unknown
 
+    async def _stale_libs(self, row: Optional[dict[str, Any]]) -> dict[str, dict[str, Optional[str]]]:
+        """{library: {version, latest}} for each library a service's venv
+        runs that the index has newer."""
+        out = {}
+        for lib, have in sorted(((row or {}).get("libs") or {}).items()):
+            new, _why = await self.latest(lib, False)
+            if _newer(new, have):
+                out[lib] = {"version": have, "latest": new}
+        return out
+
     @staticmethod
     def _peers(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [{k: r.get(k) for k in ("service", "node", "package", "version")} for r in rows if r.get("package")]
@@ -340,7 +358,7 @@ class UpgradeService:
 
     # ── dry run ───────────────────────────────────────────────────────────
     async def plan(self, nodes=None, services=None, version=None, with_=None, versions=None,
-                   only_behind: bool = True) -> dict[str, Any]:
+                   only_behind: bool = True, libs: bool = False) -> dict[str, Any]:
         order, offline = self.targets(nodes, services)
         try:
             pinned = pins(order, version, versions)
@@ -348,21 +366,38 @@ class UpgradeService:
             return {"ok": False, "error": str(e)}
         rows, unknown = await self.versions()
         out: dict[str, Any] = {"ok": True, "dry_run": True, "pins": {k: v for k, v in pinned.items() if v},
-                               "only_behind": only_behind, "order": [f"{n}/{s}" for n, s in order],
+                               "only_behind": only_behind, "libs": bool(libs),
+                               "order": [f"{n}/{s}" for n, s in order],
                                "skipped_offline": offline, "unknown_nodes": unknown, "nodes": {},
-                               "held": [], "current": []}
+                               "held": [], "current": [], "libs_only": {}, "libs_behind": {}}
         for node, svc in order:
             key = f"{node}/{svc}"
             row = next((r for r in rows if r["node"] == node and r["service"] == svc), None)
-            if only_behind and pinned[key] is None and row and row.get("package"):
+            pin, with_this = pinned[key], with_
+            # Every line says which of its libraries are behind and whether
+            # this run would move them: a current service only with libs, one
+            # that moves whenever `with` names them (unset: the Observatory's
+            # default, both).
+            stale = await self._stale_libs(row)
+            moving = True
+            if only_behind and pin is None and row and row.get("package"):
                 new, _why = await self.latest(row["package"], False)
                 if _newer(new, row.get("version")) is False:
-                    out["current"].append(key)
-                    out["nodes"].setdefault(node, {})[svc] = {"current": row.get("version"), "latest": new}
-                    continue
+                    if not (libs and stale):
+                        moving = False
+                    else:
+                        pin, with_this = row.get("version"), list(stale)
+                        out["libs_only"][key] = list(stale)
+            if stale:
+                out["libs_behind"][key] = {lib: {**v, "moves": moving and (with_this is None or lib in with_this)}
+                                           for lib, v in stale.items()}
+            if not moving:
+                out["current"].append(key)
+                out["nodes"].setdefault(node, {})[svc] = {"current": row.get("version"), "latest": new}
+                continue
             agent = self._cluster.get_agent(node)
-            body = {"dry_run": True, "version": pinned[key], "peers": self._peers(rows),
-                    **({"with": with_} if with_ is not None else {})}
+            body = {"dry_run": True, "version": pin, "peers": self._peers(rows),
+                    **({"with": with_this} if with_this is not None else {})}
             status, data = await agent.start_upgrade_async(svc, body) if agent else (502, {"error": "no client"})
             if status == 409 and data.get("upgradable") is False:
                 data = {"skipped": data.get("error")}
@@ -381,7 +416,8 @@ class UpgradeService:
 
     # ── a run ─────────────────────────────────────────────────────────────
     def start(self, nodes=None, services=None, version=None, with_=None, backup: bool = True,
-              reason: str = "by hand", versions=None, only_behind: bool = True) -> tuple[int, dict[str, Any]]:
+              reason: str = "by hand", versions=None, only_behind: bool = True,
+              libs: bool = False) -> tuple[int, dict[str, Any]]:
         if self.busy:
             return 409, {"ok": False, "error": "an upgrade run is already going", "run": self.current}
         order, offline = self.targets(nodes, services)
@@ -393,7 +429,8 @@ class UpgradeService:
         except PinError as e:
             return 400, {"ok": False, "error": str(e)}
         run = {"id": time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6], "state": "running",
-               "reason": reason[:200], "only_behind": bool(only_behind), "with": with_, "backup": bool(backup),
+               "reason": reason[:200], "only_behind": bool(only_behind), "libs": bool(libs), "with": with_,
+               "backup": bool(backup),
                "created_at": time.time(), "finished_at": None, "skipped_offline": offline,
                "steps": [{"node": n, "service": s, "version": pinned[f"{n}/{s}"] or "latest", "state": "pending"}
                          for n, s in order],
@@ -452,13 +489,19 @@ class UpgradeService:
         self.save(run)
         pinned = None if step.get("version") in (None, "latest") else step["version"]
 
-        # 0. already on the newest
+        # 0. already on the newest. With libs, one whose libraries are not
+        # is the library-alone run: pinned where it is, the stale ones named.
         row = next((r for r in rows if r["node"] == node and r["service"] == svc), None)
+        with_ = run.get("with")
         if run.get("only_behind", True) and pinned is None and row and row.get("package"):
             new, _why = await self.latest(row["package"], False)
             if _newer(new, row.get("version")) is False:
-                step["state"], step["current"] = "current", row.get("version")
-                return
+                stale = list(await self._stale_libs(row)) if run.get("libs") else []
+                if not stale:
+                    step["state"], step["current"] = "current", row.get("version")
+                    return
+                pinned, with_ = row.get("version"), stale
+                step["version"], step["libs"] = pinned, stale
 
         # 1. a copy off the box
         snapshot_on_node = True
@@ -476,8 +519,8 @@ class UpgradeService:
         # 2. the upgrade
         body = {"version": pinned, "snapshot": snapshot_on_node, "peers": self._peers(rows),
                 "reason": f"Lodestar run {run['id']}: {run['reason']}"}
-        if run.get("with") is not None:
-            body["with"] = run["with"]
+        if with_ is not None:
+            body["with"] = with_
         status, data = await agent.start_upgrade_async(svc, body, timeout=60.0)
         if status == 409 and data.get("upgradable") is False:
             step["state"], step["skipped"] = "skipped", data.get("error")

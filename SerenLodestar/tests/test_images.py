@@ -186,20 +186,20 @@ def test_a_picture_from_words_through_a_real_observatory(tmp_path, monkeypatch):
     observatory = obs_app.create_app()
 
     agent = JetsonAgentClient.__new__(JetsonAgentClient)
-    agent._node_name = "xavier32gb"
+    agent._node_name = "node-c"
     agent._log = lambda m: None
     agent._client = httpx.AsyncClient(transport=httpx.ASGITransport(app=observatory), base_url="http://192.0.2.102:7777/",
                                       headers={"Authorization": "Bearer obs-secret"})
     cluster = SimpleNamespace(
-        choose_node_for=lambda svc: SimpleNamespace(name="xavier32gb") if svc == "comfy" else None,
-        get_agent=lambda name: agent if name == "xavier32gb" else None,
+        choose_node_for=lambda svc: SimpleNamespace(name="node-c") if svc == "comfy" else None,
+        get_agent=lambda name: agent if name == "node-c" else None,
         mark_node_suspect=lambda *a: None)
 
     with TestClient(create_app(LodestarConfig())) as c:
         c.app.state.cluster = cluster
         cat = c.get("/api/v1/comfy/catalog").json()
-        assert cat["node"] == "xavier32gb" and cat["nodes"][0]["summary"]["lora"] == {"Krea 2": 1}
-        assert cat["files"]["loras/Storybook_Folk_Art_Krea2.safetensors"]["nodes"] == ["xavier32gb"]
+        assert cat["node"] == "node-c" and cat["nodes"][0]["summary"]["lora"] == {"Krea 2": 1}
+        assert cat["files"]["loras/Storybook_Folk_Art_Krea2.safetensors"]["nodes"] == ["node-c"]
         assert box["running"] is False, "the catalog is read without waking ComfyUI"
         model = next(f for f in cat["files"].values() if f.get("role") in ("checkpoint", "diffusion"))
         assert model["style"]["style"] == "prose" and "Sentences" in model["style"]["guide"], "how to prompt it rides with the model"
@@ -303,9 +303,9 @@ def test_the_node_is_picked_by_what_it_can_draw(monkeypatch):
             return 404, {}
         return SimpleNamespace(node_name=name, comfy_async=comfy_async, up=up)
 
-    spark, xavier = agent("spark128gb", []), agent("xavier32gb", ["sdxl", "sd15"])
-    agents = {"spark128gb": spark, "xavier32gb": xavier}
-    order = ["spark128gb", "xavier32gb"]
+    spark, xavier = agent("node-d", []), agent("node-c", ["sdxl", "sd15"])
+    agents = {"node-d": spark, "node-c": xavier}
+    order = ["node-d", "node-c"]
 
     async def ensure(request, service, body):
         woke.append(body["node"])
@@ -322,20 +322,20 @@ def test_the_node_is_picked_by_what_it_can_draw(monkeypatch):
         c.app.state.cluster = cluster
         cat = c.get("/api/v1/comfy/catalog").json()
         k = cat["files"]["checkpoints/krea2TurboOfficialComfy_krea2TurboBf16.safetensors"]
-        assert k["nodes"] == ["spark128gb", "xavier32gb"] and k["drawable_on"] == ["spark128gb"]
+        assert k["nodes"] == ["node-d", "node-c"] and k["drawable_on"] == ["node-d"]
         assert cat["files"]["checkpoints/autismmixSDXL_autismmixPony.safetensors"]["drawable_on"] == order
 
-        assert c.post("/api/v1/image", json={"prompt": "a wren"}).json()["node"] == "spark128gb", "Krea 2: the Spark"
+        assert c.post("/api/v1/image", json={"prompt": "a wren"}).json()["node"] == "node-d", "Krea 2: the Spark"
         order.reverse()                                       # the Xavier is preferred now
-        assert c.post("/api/v1/image", json={"prompt": "a wren"}).json()["node"] == "spark128gb", \
+        assert c.post("/api/v1/image", json={"prompt": "a wren"}).json()["node"] == "node-d", \
             "still the Spark: the Xavier keeps Krea 2's files but cannot draw it"
-        assert c.post("/api/v1/image", json={"prompt": "a fox", "model": "autismmix"}).json()["node"] == "xavier32gb"
+        assert c.post("/api/v1/image", json={"prompt": "a fox", "model": "autismmix"}).json()["node"] == "node-c"
         xavier.up = False
         out = c.post("/api/v1/image", json={"prompt": "a fox", "model": "autismmix"}).json()
-        assert out["node"] == "spark128gb" and out["skipped"] == ["xavier32gb: asleep"], "one asleep: the next draws"
+        assert out["node"] == "node-d" and out["skipped"] == ["node-c: asleep"], "one asleep: the next draws"
         plan = c.post("/api/v1/image/plan", json={"prompt": "a fox", "model": "autismmix"}).json()
-        assert plan["node"] == "xavier32gb" and plan["also"] == ["spark128gb"]
-        only = c.post("/api/v1/image/plan", json={"prompt": "a wren", "node": "xavier32gb"})
+        assert plan["node"] == "node-c" and plan["also"] == ["node-d"]
+        only = c.post("/api/v1/image/plan", json={"prompt": "a wren", "node": "node-c"})
         assert only.status_code == 400 and "does not draw krea2" in only.json()["nodes"][0]
         comp = c.get("/api/v1/comfy/compatible", params={"model": "krea2TurboOfficialComfy"}).json()
-        assert comp["drawable_on"] == ["spark128gb"] and comp["node"] == "spark128gb"
+        assert comp["drawable_on"] == ["node-d"] and comp["node"] == "node-d"

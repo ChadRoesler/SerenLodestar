@@ -1355,6 +1355,38 @@ let _upgBehind = null;      // the last /upgrade/behind
 let _upgStatus = null;      // the last /upgrade describe()
 let _upgOpenRun = null;     // the run shown in detail
 
+// What "upgrade what's behind" would move: the services behind, and the
+// current ones whose sinew or meninges is behind (pinned where they are) when
+// the box is ticked, or when the libraries are all that is behind - the
+// button is live for those too (23 Oct 2026), and then it can only mean them.
+// {behind, libs, left, withLibs, count}: lines, and services in all.
+function upgLibsOn() {
+    return !!document.getElementById('upg-libs')?.checked;
+}
+
+function upgMoves() {
+    const behind = _upgBehind?.behind || [];
+    const allLibs = _upgBehind?.libs_behind || [];
+    const withLibs = upgLibsOn() || !behind.length;
+    const key = l => l.split(' ')[0];
+    const moving = new Set(behind.map(key));
+    const libs = withLibs ? allLibs : allLibs.filter(l => moving.has(key(l)));   // these ride along anyway
+    const left = withLibs ? [] : allLibs.filter(l => !moving.has(key(l)));
+    const count = new Set([...behind, ...libs].map(key)).size;
+    return { behind, libs, left, withLibs, count };
+}
+
+function setUpgGo() {
+    const go = document.getElementById('upg-go');
+    const busy = !!_upgStatus?.busy;
+    const m = upgMoves();
+    go.disabled = !m.count || busy;
+    go.title = busy ? 'a run is going'
+             : !m.count ? 'everything is on its newest, sinew and meninges too'
+             : !m.behind.length ? `only sinew / meninges are behind: move them in ${m.count} service(s), each staying on its version`
+             : `move ${m.count} service(s)` + (m.left.length ? ` (tick sinew + meninges for ${m.left.length} more librar${m.left.length === 1 ? 'y' : 'ies'})` : '');
+}
+
 async function refreshUpgrades(refreshIndex = false) {
     const [behind, status] = await Promise.all([
         hostApi('/api/v1/upgrade/behind' + (refreshIndex ? '?refresh=true' : '')),
@@ -1362,11 +1394,7 @@ async function refreshUpgrades(refreshIndex = false) {
     ]);
     if (behind) { _upgBehind = behind; renderBehind(behind); }
     if (status) { _upgStatus = status; renderRuns(status); }
-    const go = document.getElementById('upg-go');
-    const moves = !!(behind && behind.behind && behind.behind.length);
-    go.disabled = !moves || !!(status && status.busy);
-    go.title = status && status.busy ? 'a run is going' : moves ? `move ${behind.behind.length} service(s) to their newest`
-             : 'everything is on its newest';
+    setUpgGo();
     // The run modal follows the run it shows while it is going: the steps,
     // and the log of the open step (20 Oct 2026: "log portion of the
     // modal ... is not refreshing as new data comes in"). The log is asked
@@ -1539,13 +1567,19 @@ async function planUpgrades() {
     btn.disabled = true;
     upgFlash('asking every node for its dry run…', 'info');
     try {
-        const plan = await hostApi('/api/v1/upgrade', { method: 'POST', json: { dry_run: true, only_behind: true } });
+        const plan = await hostApi('/api/v1/upgrade', { method: 'POST', json: { dry_run: true, only_behind: true, libs: upgMoves().withLibs } });
         if (!plan) { upgFlash('the plan did not come back', 'err'); return; }
         renderPlan(plan);
         upgFlash(plan.ok ? 'plan ready - nothing was changed' : 'plan ready, with problems - see each line', plan.ok ? 'ok' : 'err');
     } finally {
         btn.disabled = false;
     }
+}
+
+// [{name: 'sinew', version, latest, moves}] for one plan line.
+function planLibs(plan, key) {
+    return Object.entries((plan.libs_behind || {})[key] || {})
+        .map(([n, v]) => ({ name: n.replace(/^seren-/, ''), ...v }));
 }
 
 function renderPlan(plan) {
@@ -1561,10 +1595,14 @@ function renderPlan(plan) {
     const order = plan.order || [];
     const current = new Set(plan.current || []);
     const moving = order.filter(k => !current.has(k)).length;
+    // sinew / meninges behind, per line: whether this plan moves them
+    const libsAll = order.flatMap(k => planLibs(plan, k));
+    const libsLeft = libsAll.filter(l => !l.moves).length;
     document.getElementById('run-header-fields').innerHTML = `
         <div class="modal-header-field"><div class="modal-header-label">Plan</div><div class="modal-header-value">dry run · nothing changed</div></div>
         <div class="modal-header-field"><div class="modal-header-label">Would move</div><div class="modal-header-value">${moving}</div></div>
         <div class="modal-header-field"><div class="modal-header-label">Current</div><div class="modal-header-value">${current.size}</div></div>
+        ${libsAll.length ? `<div class="modal-header-field"><div class="modal-header-label">sinew / meninges behind</div><div class="modal-header-value">${libsAll.length - libsLeft} moving${libsLeft ? ` · ${libsLeft} left` : ''}</div></div>` : ''}
         ${plan.skipped_offline?.length ? `<div class="modal-header-field"><div class="modal-header-label">Offline</div><div class="modal-header-value">${escapeHtml(plan.skipped_offline.join(', '))}</div></div>` : ''}`;
     const lines = order.map((key, i) => {
         const [node, svc] = key.split('/');
@@ -1579,13 +1617,18 @@ function renderPlan(plan) {
             const moves = (d.would_install || []).map(w => `${w.name} ${w.version}`);
             what = moves.length ? `would install ${upgCell(moves.join(', '))}` : 'nothing to install';
             if (d.before && d.package) what = `${upgCell(d.before[d.package])} → ` + what;
+            if ((plan.libs_only || {})[key]) what = 'stays on its version, libraries only: ' + what;
         }
-        return `<tr class="${state} upg-step" data-plan-row="${i}"><td>${upgCell(node)}</td><td>${upgCell(svc)}</td><td>${upgBadge(state)}</td><td>${what}</td></tr>`;
+        const libs = planLibs(plan, key).map(l =>
+            `<span class="upg-state ${l.moves ? 'warn' : 'wait'}" title="${l.moves ? 'this run moves it' : 'left where it is: tick sinew + meninges too'}">`
+            + `${escapeHtml(l.name)} ${escapeHtml(l.version || '?')} → ${escapeHtml(l.latest || '?')}${l.moves ? '' : ' · left'}</span>`).join(' ');
+        return `<tr class="${state} upg-step" data-plan-row="${i}"><td>${upgCell(node)}</td><td>${upgCell(svc)}</td><td>${upgBadge(state)}</td><td>${what}${libs ? ' ' + libs : ''}</td></tr>`;
     });
     document.getElementById('run-steps').innerHTML =
         (plan.error ? `<div class="upg-note bad">${escapeHtml(plan.error)}</div>` : '')
         + `<div class="upg-table-wrap"><table class="upg-table"><tbody><tr><th>node</th><th>service</th><th></th><th>in run order</th></tr>${lines.join('')}</tbody></table></div>`
-        + (plan.held?.length ? `<div class="upg-note">held: ${escapeHtml(plan.held.join(' · '))}</div>` : '');
+        + (plan.held?.length ? `<div class="upg-note">held: ${escapeHtml(plan.held.join(' · '))}</div>` : '')
+        + (libsLeft ? `<div class="upg-note">${libsLeft} older sinew / meninges this plan leaves where they are, on services that are otherwise current. Tick "sinew + meninges too" to move them: each service stays on its version and is restarted.</div>` : '');
     document.getElementById('run-log').innerHTML = '<div class="run-log-empty">click a line to see what it would install, or why it would not move</div>';
     document.getElementById('run-backdrop').classList.add('visible');
     document.getElementById('run-steps').querySelectorAll('tr[data-plan-row]').forEach(tr =>
@@ -1601,6 +1644,9 @@ function showPlanDetail(plan, key, tr) {
     const list = (k, arr) => { if (arr && arr.length) lines.push(`<div class="run-log-key">${escapeHtml(k)}</div><pre class="run-log-pre">${escapeHtml(arr.join('\n'))}</pre>`); };
     if (d.before) kv('before', d.before);
     list('would install', (d.would_install || []).map(w => `${w.name} ${w.version}`));
+    list('sinew / meninges behind', planLibs(plan, key).map(l =>
+        `seren-${l.name} ${l.version} → ${l.latest}: ${l.moves ? 'moves in this run' : 'left (tick sinew + meninges too)'}`));
+    if ((plan.libs_only || {})[key]) kv('libraries only', 'the service stays on its version; pip moves the libraries and it is restarted');
     if (d.current) kv('current', d.current);
     if (d.skipped) kv('skipped', d.skipped);
     if (d.held) kv('held', d.held);
@@ -1612,13 +1658,17 @@ function showPlanDetail(plan, key, tr) {
 }
 
 async function startUpgrades() {
-    const n = (_upgBehind?.behind || []).length;
-    const list = (_upgBehind?.behind || []).slice(0, 12).join('\n') + (n > 12 ? `\n… and ${n - 12} more` : '');
-    if (!confirm(`Upgrade ${n} service(s) that are behind?\n\n${list}\n\nEach is backed up to the stash first, then pip, an import check, a restart and health; a failure rolls that one back and the run goes on. Stores first, each node's Observatory last, Lodestar last of all.`)) return;
+    const m = upgMoves();
+    const lines = [...m.behind, ...m.libs];
+    const list = lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n… and ${lines.length - 12} more` : '');
+    const libsNote = (m.withLibs && m.libs.length ? '\n\nA service listed only for a library stays on its version; the library moves and the service is restarted.' : '')
+        + (m.left.length ? `\n\n${m.left.length} older sinew / meninges on services that are otherwise current are left where they are (tick "sinew + meninges too" to move them).` : '');
+    if (!confirm(`Upgrade ${m.count} service(s)?\n\n${list}${libsNote}\n\nEach is backed up to the stash first, then pip, an import check, a restart and health; a failure rolls that one back and the run goes on. Stores first, each node's Observatory last, Lodestar last of all.`)) return;
     const go = document.getElementById('upg-go');
     go.disabled = true;
     upgFlash('starting the run…', 'info');
-    const { status, body } = await postUpgrade({ only_behind: true, backup: true, reason: 'from the viewer' });
+    const { status, body } = await postUpgrade({ only_behind: true, libs: m.withLibs, backup: true,
+                                                 reason: 'from the viewer' + (m.withLibs && m.libs.length ? ', sinew + meninges too' : '') });
     if (status !== 202 || !body.ok) {
         upgFlash(body.error || `Lodestar answered HTTP ${status}`, 'err');
         go.disabled = false;
@@ -1778,6 +1828,7 @@ function initUpgrades() {
     });
     document.getElementById('upg-plan').addEventListener('click', planUpgrades);
     document.getElementById('upg-go').addEventListener('click', startUpgrades);
+    document.getElementById('upg-libs').addEventListener('change', setUpgGo);
     document.getElementById('upg-runs').addEventListener('click', (e) => {
         const row = e.target.closest('tr[data-run]');
         if (row) openRun(row.dataset.run);

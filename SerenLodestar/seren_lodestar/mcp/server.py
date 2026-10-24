@@ -312,19 +312,23 @@ def mount_mcp_routes(app: FastAPI) -> Any:
 
     @mcp_server.tool()
     async def upgrade_plan(nodes: list[str] | None = None, services: list[str] | None = None,
-                           versions: dict[str, str] | None = None, only_behind: bool = True) -> dict:
+                           versions: dict[str, str] | None = None, only_behind: bool = True,
+                           libs: bool = False) -> dict:
         """What an upgrade would do, changing nothing: each online node's
         Observatory asks pip for its plan, per seren service (or the ones
         named, by short name like 'memory' or full name), in the order a run
         would take them. Each app goes to its own newest release unless
         versions pins it ({"memory": "5.2.0"}); with only_behind (default)
-        the ones already on their newest are listed as current. 'held' lists
-        apps whose new version needs a newer peer (a Memory, a Loci) than the
-        cluster would run."""
+        the ones already on their newest are listed as current. With libs, a
+        current one whose seren-sinew or seren-meninges is behind is planned
+        too, pinned where it is with just those libraries (libs_only). 'held'
+        lists apps whose new version needs a newer peer (a Memory, a Loci)
+        than the cluster would run."""
         svc = getattr(app.state, "upgrades", None)
         if svc is None:
             return {"ok": False, "error": "upgrades are not available"}
-        return await svc.plan(nodes=nodes, services=services, versions=versions, only_behind=only_behind)
+        return await svc.plan(nodes=nodes, services=services, versions=versions, only_behind=only_behind,
+                              libs=libs)
 
     @mcp_server.tool()
     async def upgrade_behind(nodes: list[str] | None = None, services: list[str] | None = None,
@@ -341,11 +345,13 @@ def mount_mcp_routes(app: FastAPI) -> Any:
     @mcp_server.tool()
     async def upgrade_start(nodes: list[str] | None = None, services: list[str] | None = None,
                             versions: dict[str, str] | None = None, only_behind: bool = True,
-                            reason: str = "asked over MCP") -> dict:
+                            reason: str = "asked over MCP", libs: bool = False) -> dict:
         """Start an upgrade run and return at once with its id. Each app on
         its own: to its newest release, or the version pinned in versions
         ({"memory": "5.2.0"}); with only_behind (default) the ones already on
-        their newest are left alone. Per service, in order (stores first, the
+        their newest are left alone, unless libs and their seren-sinew or
+        seren-meninges is behind: then the service is pinned where it is and
+        just those libraries move (it is still restarted). Per service, in order (stores first, the
         Observatory last on each node, Lodestar last of all): a fresh
         snapshot pulled into the stash, then the node's Observatory checks
         the apps it talks to are new enough (else 'held', untouched),
@@ -357,7 +363,7 @@ def mount_mcp_routes(app: FastAPI) -> Any:
         if svc is None:
             return {"ok": False, "error": "upgrades are not available"}
         _status, out = svc.start(nodes=nodes, services=services, versions=versions, only_behind=only_behind,
-                                 reason=reason)
+                                 reason=reason, libs=libs)
         return out
 
     @mcp_server.tool()

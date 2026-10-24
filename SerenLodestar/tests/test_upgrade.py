@@ -327,6 +327,61 @@ def test_a_library_alone_is_a_run_of_its_service_pinned_where_it_is(tmp_path):
     assert svc.load(out["run"]["id"])["steps"][0]["state"] == "done"
 
 
+def test_with_libs_a_current_service_with_a_stale_library_moves_just_the_library(tmp_path):
+    """23 Oct 2026, the sinew + meninges box beside "upgrade what's behind":
+    a service on its newest whose venv runs an old library is the
+    library-alone run (pinned where it is, `with` naming only what is behind).
+    Without the box it is left alone, as before."""
+    newest = {"seren-memory": "5.0.0", "seren-loci": "5.0.0", "seren-sinew": "5.0.0", "seren-meninges": "5.0.0"}
+
+    def run_with(libs):
+        svc, nuc, nano = _world(tmp_path / str(libs), newest=newest)
+
+        async def go():
+            _s, out = svc.start(nodes=["nuc"], services=["memory", "loci", "workbench"], libs=libs)
+            await _until_done(svc)
+            return svc.load(out["run"]["id"])
+        return asyncio.run(go()), nuc
+
+    run, nuc = run_with(False)
+    assert {s["service"]: s["state"] for s in run["steps"]} == {
+        "seren-memory-wren": "current", "seren-loci-wren": "current", "seren-workbench-wren": "done"}
+    assert "with" not in dict(nuc.started)["seren-workbench-wren"], "behind: the Observatory's own default"
+
+    run, nuc = run_with(True)
+    assert run["libs"] is True and all(s["state"] == "done" for s in run["steps"]), run
+    started = dict(nuc.started)
+    for svc in ("seren-memory-wren", "seren-loci-wren"):
+        assert started[svc]["version"] == "5.0.0" and started[svc]["with"] == ["seren-meninges"], \
+            "pinned where it is, and only the library that is behind (sinew is on its newest)"
+    step = next(s for s in run["steps"] if s["service"] == "seren-memory-wren")
+    assert step["libs"] == ["seren-meninges"] and step["version"] == "5.0.0"
+    wb = started["seren-workbench-wren"]
+    assert wb["version"] is None and "with" not in wb, "a service that is behind moves its libraries anyway"
+
+
+def test_with_libs_the_plan_says_which_lines_are_libraries_only(tmp_path):
+    svc, nuc, nano = _world(tmp_path, newest={"seren-memory": "5.0.0", "seren-sinew": "5.0.0",
+                                              "seren-meninges": "5.0.0"})
+    off = asyncio.run(svc.plan(nodes=["nuc"], services=["memory"]))
+    assert off["current"] == ["nuc/seren-memory-wren"] and off["libs_only"] == {} and nuc.planned == []
+    assert off["libs_behind"] == {"nuc/seren-memory-wren": {"seren-meninges": {
+        "version": "4.9.0", "latest": "5.0.0", "moves": False}}}, "the plan says what it leaves"
+    on = asyncio.run(svc.plan(nodes=["nuc"], services=["memory"], libs=True))
+    assert on["libs"] is True and on["current"] == []
+    assert on["libs_only"] == {"nuc/seren-memory-wren": ["seren-meninges"]}
+    assert on["libs_behind"]["nuc/seren-memory-wren"]["seren-meninges"]["moves"] is True
+    (planned,) = nuc.planned
+    assert planned[1]["version"] == "5.0.0" and planned[1]["with"] == ["seren-meninges"]
+    assert nuc.started == []
+    # a service that is behind takes its libraries along, box or no box
+    behind = asyncio.run(svc.plan(nodes=["nuc"], services=["loci"]))
+    assert behind["libs_behind"]["nuc/seren-loci-wren"]["seren-meninges"]["moves"] is True
+    # unless the run names its own `with` without them
+    alone = asyncio.run(svc.plan(nodes=["nuc"], services=["loci"], with_=[]))
+    assert alone["libs_behind"]["nuc/seren-loci-wren"]["seren-meninges"]["moves"] is False
+
+
 def test_the_routes_and_the_tools(tmp_path):
     cfg = LodestarConfig(config_path=str(tmp_path / "seren-lodestar.yaml"))
     cfg.backup = BackupConfig(dir=str(tmp_path / "stash"), every_hours=0)
@@ -336,6 +391,8 @@ def test_the_routes_and_the_tools(tmp_path):
         c.app.state.upgrades = svc
         p = c.post("/api/v1/upgrade", json={"dry_run": True, "services": "memory"}).json()
         assert p["order"] == ["nuc/seren-memory-wren"]
+        lp = c.post("/api/v1/upgrade", json={"dry_run": True, "services": "memory", "libs": True}).json()
+        assert lp["libs"] is True and "libs_only" in lp
         assert c.post("/api/v1/upgrade", json={"services": ["memory", "loci"], "version": "5.0.1"}).status_code == 400
         assert c.post("/api/v1/upgrade", json={"dry_run": True, "version": "5.0.1"}).status_code == 400
         assert c.get("/api/v1/upgrade/behind?services=memory").json()["behind"] == ["nuc/seren-memory-wren 5.0.0 -> 5.0.1"]

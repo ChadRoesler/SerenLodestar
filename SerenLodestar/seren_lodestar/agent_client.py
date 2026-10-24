@@ -356,6 +356,28 @@ class JetsonAgentClient:
         path = f"api/v1/service/{quote(service, safe='')}/models"
         return await self._get_json_raw(path)
 
+    async def service_models_call_async(self, method: str, service: str, sub: str,
+                                        body: Optional[Any] = None) -> tuple[int, Any]:
+        """A model-shelf call on the node (/models/fetch, /model, a delete),
+        passed through as it is: (status, JSON). The node's own refusals - a
+        409 "already here", a 404 "no such file" - are the answer, so they
+        are handed back rather than flattened to None. (0, None) when the
+        node did not answer."""
+        path = f"api/v1/service/{quote(service, safe='')}/{sub}"
+        try:
+            resp = await self._client.request(method, path, json=body, timeout=60.0)
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {"detail": resp.text[:300]}
+            return resp.status_code, data
+        except httpx.TimeoutException:
+            self._log(f"{method} {path} -> timeout")
+            return 0, None
+        except Exception as ex:  # noqa: BLE001
+            self._log(f"{method} {path} -> {type(ex).__name__}: {ex}")
+            return 0, None
+
     # ── lifecycle ───────────────────────────────────────────────────────────
 
     async def aclose(self) -> None:

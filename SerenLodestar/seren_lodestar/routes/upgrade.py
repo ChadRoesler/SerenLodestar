@@ -4,6 +4,8 @@ Upgrades across the cluster - /api/v1/upgrade (seren_lodestar.upgrade).
     POST /api/v1/upgrade            start a run; 202 with it (dry_run: 200 with every node's plan)
         {"nodes": ["nuc"], "services": ["memory", "loci"],   both optional: everything seren online
          "only_behind": true,                                default: leave what is on the newest alone
+         "libs": false,                                      true: and move a current one whose sinew or
+                                                             meninges is behind (pinned where it is)
          "versions": {"memory": "5.2.0"},                    pins, per app; the rest go to their newest
          "version": "5.2.0",                                 a pin for a run of ONE app (else 400)
          "with": ["seren-sinew", ...],                       default: the Observatory's (sinew + meninges)
@@ -55,14 +57,15 @@ async def upgrade_start(request: Request, body: dict = Body(default={})):
     with_ = body.get("with") if isinstance(body.get("with"), list) else None
     nodes, services = _names(body.get("nodes")), _names(body.get("services"))
     only_behind = bool(body.get("only_behind", True))
+    libs = bool(body.get("libs", False))
     if body.get("dry_run"):
         out = await svc.plan(nodes=nodes, services=services, version=version, with_=with_,
-                             versions=versions, only_behind=only_behind)
+                             versions=versions, only_behind=only_behind, libs=libs)
         return JSONResponse(out, status_code=200 if out.get("ok") or "nodes" in out else 400)
     status, out = svc.start(nodes=nodes, services=services, version=version, with_=with_,
                             backup=bool(body.get("backup", True)),
                             reason=str(body.get("reason") or "by hand"),
-                            versions=versions, only_behind=only_behind)
+                            versions=versions, only_behind=only_behind, libs=libs)
     return JSONResponse(out, status_code=status)
 
 

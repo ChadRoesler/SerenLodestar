@@ -886,7 +886,9 @@
 .upg-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--gap); flex-wrap: wrap; margin-bottom: var(--gap); }
 .upg-title strong { font-size: 15px; color: var(--text-hi); }
 .upg-sub { display: block; font-size: 11px; color: var(--text-lo); margin-top: 2px; }
-.upg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.upg-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.upg-check { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-mid); cursor: pointer; }
+.upg-check input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 .upg-btn {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
     color: var(--text-hi); font-family: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
