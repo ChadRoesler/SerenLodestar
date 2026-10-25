@@ -40,7 +40,7 @@ def test_the_card_groups_collapsed_by_default_and_remembers_what_was_opened():
     assert "function groupServices" in script and "function instanceOf" in script
     node = script[script.index("function renderNode"):script.index("function renderGrid")]
     assert "serviceTree(node, { hideObservatory: false })" in node, "the card draws the tree: groups, owners, what they own"
-    assert "'▸'" in node and "'▾'" in node, "a caret says which way the group is (Geometric Shapes: every kiosk font has them)"
+    assert "seren-chev" in node and "' open'" in node,         "a chevron says which way the group is: the shell's, drawn from borders, so no kiosk font can lose it"
     assert "foldOpen(key, !!screen.expandInstances)" in node, "open state is per node and instance, against this screen's default"
     assert "const toggledFolds = new Set()" in script, "...and survives the poll's re-render"
     assert "svcRow(r, 1)" in node and "instanceOf(k)?.app || k" in script, "inside a group a service is shown as its app"

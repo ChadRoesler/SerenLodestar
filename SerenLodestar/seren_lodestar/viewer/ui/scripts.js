@@ -944,9 +944,10 @@ function renderNode(node) {
     } else {
         const tree = serviceTree(node, { hideObservatory: false });
         const html = [];
-        // ▸/▾ (Geometric Shapes) and not ⏵/⏷ (Misc Technical): a Linux kiosk with
-        // DejaVu and Noto Emoji has the first pair and draws the second as a hex box.
-        const caret = (open) => `<span class="svc-caret">${open ? '▾' : '▸'}</span>`;
+        // The family's one chevron (seren-chev, drawn by the shell from two
+        // borders, so no font can turn it into a hex box - which is why this
+        // was ▸/▾ and not ⏵/⏷ before 24 Oct 2026).
+        const caret = (open) => `<span class="svc-caret seren-chev${open ? ' open' : ''}"></span>`;
         const svcRow = (r, depth) => {
             const own = rollup([r]);
             const badge = serviceBadge(r.container ? { service_type: 'container' } : r.status);
@@ -1005,9 +1006,21 @@ function renderNode(node) {
         tempDisplay = 'n/a';
     }
 
+    // The carabiners clipped on the box, as its Observatory's /system/node
+    // says them (24 Oct 2026). A row only when there are some: an
+    // Observatory from before says nothing, and a box with none has nothing
+    // to say. The build after the + and the path are in the tooltip.
+    const clips = Array.isArray(node.agent_node?.carabiners) ? node.agent_node.carabiners : [];
+    const clipRow = clips.length ? (() => {
+        const short = clips.map(c => `${c.carabiner} ${c.present ? (String(c.version || '?').split('+')[0]) : 'missing'}`);
+        const full = clips.map(c => `${c.carabiner} ${c.version || '?'}${c.present ? '' : ' (missing)'} - ${c.kbh}`);
+        return `<div class="row" title="${escapeHtml(full.join('\n'))}"><span>clips</span><span>${escapeHtml(short.join(', '))}</span></div>`;
+    })() : '';
+
     footer.innerHTML = `
         <div class="row"><span>temp</span><span class="${tempClass}">${tempDisplay}</span></div>
         <div class="row"><span>mem</span><span>${memUsedGb} / ${memTotalGb} Gb</span></div>
+        ${clipRow}
       `;
     card.appendChild(footer);
 

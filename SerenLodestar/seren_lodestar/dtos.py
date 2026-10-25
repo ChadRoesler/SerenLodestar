@@ -49,6 +49,12 @@ class NodeRuntime:
 class NodeResponse:
     manifest: Optional[NodeManifest] = None
     runtime: Optional[NodeRuntime] = None
+    #: The carabiners clipped on the box, Rack or no Rack (24 Oct 2026): rows
+    #: of {carabiner, version, sha256, kbh, configured, present, rack,
+    #: found_by, install}, as the Observatory's /system/node says them (its
+    #: carabiner_inventory). Rows pass through as dicts, like a service's
+    #: children. None = an Observatory from before, which does not say.
+    carabiners: Optional[list[dict[str, Any]]] = None
 
 
 @dataclass

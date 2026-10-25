@@ -13,21 +13,29 @@
  * ════════════════════════════════════════════════════════════════════ */
 
 :root {
-    /* Backgrounds - darkest at page, lighter on cards */
-    --bg-page: #0F1222;          /* deep space navy */
-    --bg-card: #13151E;          /* node cards, modal */
-    --bg-row: #29326D;           /* interactive rows, headers */
-    --bg-row-selected: #131732;
-    --bg-overlay: #0B1026E6;     /* modal backdrop dim */
+    /* Backgrounds - darkest at page, lighter on cards. These are the shell's
+       walls now, tinted 5% by the accent like every other viewer's (24 Oct
+       2026: "Cards aren't getting the right color (nodes, upgrade cards, rack
+       wakes, etc)"). They used to be this leaf's own navy: a page of #0F1222,
+       cards of #13151E (darker than the shell's page, so a node card sat in a
+       hole), rows and hovers of #29326D. The names stay so the rules below
+       did not have to change; only what they point at did. */
+    --bg-page: var(--bg);        /* insets: inputs, log panes, rack choices; dark text on a bright fill */
+    --bg-card: var(--surface);   /* node cards, upgrade/rack cards, modals */
+    --bg-row: var(--surface-2);  /* hovered and open rows, headers, the drill-down's action column */
+    --bg-row-selected: var(--surface-2);
+    --bg-overlay: color-mix(in srgb, var(--bg) 90%, transparent);   /* modal backdrop dim */
     /* Borders: the card edges and dividers are the shell's --border, the
        same hairline every viewer draws (20 Oct 2026: "border should
        go back to the same border color used across all things"); the
        electric #1E2A78 this leaf used to set is gone. Hover/focus is gold. */
     --border-hi: #C9A227;        /* gold hover/focus ring (was purple) */
-    /* Text - light on dark, three tiers of emphasis */
-    --text-hi: #E6F0FF;
-    --text-mid: #B7C5E0;
-    --text-lo: #6A7AA0;
+    /* Text - light on dark, three tiers of emphasis: the shell's text, dim
+       and faint, tinted with the walls (24 Oct 2026; they were a blue-grey
+       ladder, #E6F0FF / #B7C5E0 / #6A7AA0, that matched the old navy). */
+    --text-hi: var(--text);
+    --text-mid: var(--text-dim);
+    --text-lo: var(--faint);
     /* Status - running/loading/down/library, plus thermal */
     --status-ok: #B7FF4C;
     --status-warn: #FFD23F;
@@ -208,7 +216,7 @@
 
     /* An instance group: one row for the whole install, click to open. */
     .svc-list .svc-group { cursor: pointer; font-weight: 600; user-select: none; }
-        .svc-list .svc-group .svc-caret { display: inline-block; width: 1.1em; color: var(--text-mid); }
+        .svc-list .svc-group .svc-caret { display: inline-block; margin-right: .75em; color: var(--text-mid); }
         .svc-list .svc-group .svc-count { color: var(--text-lo); font-weight: 400; margin-left: 0.5em; font-size: 0.85em; }
         .svc-list .svc-group:hover { color: var(--text-hi); }
     .svc-list .svc-name.svc-in-group { padding-left: 1.3em; color: var(--text-mid); }
@@ -221,7 +229,7 @@
     /* An owner folds what it owns, the way an instance group does; the
        family indents one step per depth. */
     .svc-list .svc-owner { cursor: pointer; user-select: none; }
-        .svc-list .svc-owner .svc-caret { display: inline-block; width: 1.1em; color: var(--text-mid); }
+        .svc-list .svc-owner .svc-caret { display: inline-block; margin-right: .75em; color: var(--text-mid); }
         .svc-list .svc-owner .svc-count { color: var(--text-lo); font-weight: 400; margin-left: 0.5em; font-size: 0.85em; }
         .svc-list .svc-owner:hover { color: var(--text-hi); }
     .svc-list .svc-name.depth-2 { padding-left: 2.6em; }
