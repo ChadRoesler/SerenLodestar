@@ -73,7 +73,7 @@ from seren_meninges import get_version
 from seren_meninges.updates import updates_payload
 from seren_meninges.auth import bearer_auth_middleware, DEFAULT_PUBLIC_PATHS
 from seren_meninges.viewer import render_from_dir
-from seren_sinew.request_log import RequestLoggingMiddleware
+from seren_sinew.request_log import RequestLoggingMiddleware, request_id_hooks
 
 from . import __version__ as _fallback_version
 APP_VERSION = get_version("seren-lodestar", fallback=_fallback_version)
@@ -116,7 +116,7 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
         def _http_client_factory(name: str) -> httpx.AsyncClient:
             if name not in _http_clients:
                 timeout = _llama_timeout if name == "llama-upstream" else httpx.Timeout(120)
-                _http_clients[name] = httpx.AsyncClient(timeout=timeout)
+                _http_clients[name] = httpx.AsyncClient(timeout=timeout, event_hooks=request_id_hooks(asynchronous=True))
             return _http_clients[name]
 
         app.state.http_client_factory = _http_client_factory

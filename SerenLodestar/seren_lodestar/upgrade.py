@@ -86,12 +86,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
+
+from seren_sinew.atomic import write_json
 
 log = logging.getLogger("seren_lodestar.upgrade")
 
@@ -240,11 +241,7 @@ class UpgradeService:
 
     # ── the runs on disk ──────────────────────────────────────────────────
     def save(self, run: dict[str, Any]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        p = self.root / f"{run['id']}.json"
-        tmp = p.with_name(p.name + ".tmp")
-        tmp.write_text(json.dumps(run, indent=2), encoding="utf-8")
-        os.replace(tmp, p)
+        write_json(self.root / f"{run['id']}.json", run)
 
     def load(self, run_id: str) -> Optional[dict[str, Any]]:
         if not run_id or any(c in run_id for c in "/\\."):

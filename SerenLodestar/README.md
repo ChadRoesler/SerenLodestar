@@ -86,6 +86,14 @@ laptop all go in the same way. Only the Observatory on the far end matters.
 
 ## What it actually does
 
+**The wire to a node is spelled once.** The node client, the discovery loop
+and every shape an Observatory answers with live in `seren_sinew.cluster`
+(since 28 Oct 2026); `seren_lodestar.agent_client`, `cluster` and `dtos` are
+the same things under the names this service has always used. A contract
+test on each side (`tests/test_wire_contract.py` here and in the
+Observatory) parses the Observatory's real answers strictly with those
+shapes, so the two cannot drift apart quietly again.
+
 **Discovery runs on a loop.** Every `refresh_interval`, every node gets probed
 with a `discovery_timeout` of patience. Nodes go offline and come back without
 anyone restarting anything, and the capability map — which services exist on

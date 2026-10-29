@@ -29,6 +29,7 @@ from urllib.parse import quote
 
 import httpx
 
+from seren_sinew.atomic import write_json
 from seren_sinew.carabiners import MAX_KBH, NAME, kbh_identity
 
 META = "shelf.json"
@@ -75,10 +76,7 @@ class Shelf:
             return {}
 
     def _save_meta(self, meta: dict[str, Any]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        tmp = self.root / (META + ".tmp")
-        tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        os.replace(tmp, self.root / META)
+        write_json(self.root / META, meta)
 
     def entries(self) -> dict[str, dict[str, Any]]:
         """{carabiner: {file, version, sha256, source, fetched_at}}."""

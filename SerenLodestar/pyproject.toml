@@ -42,7 +42,7 @@ dependencies = [
     # because a MAJOR here is an un-defaultable security change, and that is
     # the only thing that should ever force a bump.
     "seren-meninges>=6.0.0,<7",
-    "seren-sinew>=5.1.0,<6",  # 5.1.0: run policies, lease clocks, decide (seren_lodestar.run_as_needed); 1.11.0: ensure / release
+    "seren-sinew>=5.4.0,<6",  # 5.4.0: seren_sinew.cluster (the node client, discovery and the wire's DTOs moved there); 5.3.0: request ids carried to the next hop (request_id_hooks / request_id_scope), seren_sinew.atomic; 5.1.0: run policies, lease clocks, decide (seren_lodestar.run_as_needed); 1.11.0: ensure / release
 ]
 
 [project.optional-dependencies]
