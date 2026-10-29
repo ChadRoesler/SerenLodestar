@@ -148,6 +148,13 @@ async def service_ensure(request: Request, service: str, body: dict = Body(defau
         agent = cluster.get_agent(node.name) if node is not None else None
         if agent is None:
             return EnsureResult.failed(service, f"no online node has '{service}' installed").to_dict()
+    # The transit: a service that displaces another on the same box (the
+    # hippocampus's llama and the main one, one GPU) has the way cleared
+    # first - the held sibling waited for, then stopped through the node's
+    # Observatory (run_as_needed.Steward.transit).
+    blocked = await steward.transit(agent, service, req, holder)
+    if blocked:
+        return EnsureResult.failed(service, blocked, agent.node_name).to_dict()
     out = await agent.ensure_service_async(service, req)
     if out.ok and out.ready:
         out.base_url = _service_base_url(agent, out.port, request)

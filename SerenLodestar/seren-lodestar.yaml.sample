@@ -152,3 +152,9 @@ orchestration:
   #   theatre:     on_demand
   #   hippocampus: {mode: scheduled, hours: "22:00-07:00", idle_minutes: 10}
   #   memory:      always
+  #   # The transit: two llamas on one GPU. An ensure of the hippocampus's
+  #   # llama on a box where the main one runs waits for the main one's
+  #   # holders to let go, stops it through the node's Observatory, then
+  #   # starts its own. Nothing is restored after: on demand brings the main
+  #   # one back on the next ask. Names are an install's full or short name.
+  #   hippocampus-llama: {mode: on_demand, idle_minutes: 1, displaces: [llama]}

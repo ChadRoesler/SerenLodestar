@@ -315,6 +315,20 @@ policies, the leases, every app and what was started and stopped lately;
 policy is the old behaviour exactly. Lodestar and the Observatory are never
 managed.
 
+**The transit: two bodies on one box, one GPU.** A policy may name the apps
+it `displaces` on the same node: `hippocampus-llama: {mode: on_demand,
+idle_minutes: 1, displaces: [llama]}`. An ensure of `hippocampus-llama` on a
+box where `llama` is running first waits for `llama`'s holders to let go (up
+to the ask's own `wait_seconds`; a turn in flight is never pre-empted, and
+nobody is asked), then stops `llama` through the node's Observatory, then
+starts its own. While the transit stands, `llama` on that box is held out of
+routing, so a request for it goes to a fallback node instead of queueing
+behind a brief. The transit ends on the check after the displacing app has no
+holder left; `llama` is routable again and is not restarted, since on demand
+brings it back on the next ask. `GET /api/v1/orchestration` lists the
+transits standing and the holds. Lodestar decides, the Observatory executes,
+the hippocampus only asks.
+
 ## Upgrades
 
 Snap it, snap the config, upgrade, put it back — without remembering to.

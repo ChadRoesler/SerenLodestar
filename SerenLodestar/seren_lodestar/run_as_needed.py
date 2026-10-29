@@ -40,10 +40,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from seren_sinew.orchestration import (DEFAULT_TTL_SECONDS, Leases, Policies, RunPolicy, decide, resolve,
-                                       short_name)
+from seren_sinew.orchestration import (DEFAULT_TTL_SECONDS, Leases, Policies, RunPolicy, decide, displaced_by,
+                                       resolve, short_name)
 
 log = logging.getLogger("seren_lodestar.run_as_needed")
+
+#: How often a transit looks again at a held sibling's lease while waiting.
+TRANSIT_POLL_S = 2.0
 
 
 @dataclass
@@ -97,6 +100,11 @@ class Steward:
         self.history: deque[dict[str, Any]] = deque(maxlen=50)
         self.last_check: Optional[float] = None
         self._marked: set[tuple[str, str]] = set()
+        # (node, displaced service) -> {"for": the service that displaced it,
+        # "holder", "since"}: the transits standing. In memory only: a
+        # Lodestar restart forgets them, and the next check sees the
+        # displacing service with no holder and would have ended them anyway.
+        self.transits: dict[tuple[str, str], dict[str, Any]] = {}
         self._log = log_fn or (lambda m: log.info(m))
         self._lock = asyncio.Lock()
 
@@ -141,6 +149,92 @@ class Steward:
                     out[(node, svc)] = bool(getattr(st, "running", False))
         return out
 
+    # ── the transit: two bodies on one box, one GPU ───────────────────────
+    async def transit(self, agent: Any, service: str, req: Any, holder: str) -> Optional[str]:
+        """Clear the way for `service` on the agent's node before it is
+        ensured: every running service its policy `displaces` is stopped
+        through the node's Observatory, and a held one is WAITED for first
+        (its holders let go, or their leases run out), up to the ask's own
+        wait. Lodestar decides, the Observatory executes, nobody is asked.
+        Returns why it could not, or None when the way is clear (or there
+        was nothing in it).
+
+        Chad's chart, 28 Oct 2026: the hippocampus wakes, asks for its llama;
+        another llama holds the box; scale that one down for the drafting.
+        The displaced service is held out of routing meanwhile (the cluster's
+        hold), so a request for it goes to a fallback instead of queueing
+        behind a brief. Nothing is restored after: the transit ends when the
+        displacing service has no holder (the next check), and an on_demand
+        sibling comes back on the next ask for it.
+        """
+        pol = self.policy(service)
+        if not pol.displaces:
+            return None
+        node = agent.node_name
+        refresh = getattr(self.cluster, "refresh_node_async", None)
+        if refresh is not None:
+            try:
+                await refresh(node)                  # the poll may be minutes old; look now
+            except Exception as e:  # noqa: BLE001 - a stale snapshot is still a snapshot
+                self._log(f"transit: could not refresh {node}: {e}")
+        running_here = [s for (n, s), up in self.running().items() if n == node and up]
+        victims = displaced_by(pol, service, running_here)
+        if not victims:
+            return None
+        deadline = time.monotonic() + max(0.0, float(getattr(req, "wait_seconds", 0.0) or 0.0))
+        hold = getattr(self.cluster, "hold", None)
+        unhold = getattr(self.cluster, "unhold", None)
+        for sib in victims:
+            while True:
+                self.leases.expire()
+                e = self.leases.entries().get((node, sib)) or {"holders": []}
+                if not e["holders"]:
+                    break
+                if time.monotonic() >= deadline:
+                    return (f"'{sib}' on '{node}' is held by {', '.join(e['holders'])} and '{service}' displaces it; "
+                            f"waited {float(getattr(req, 'wait_seconds', 0.0) or 0.0):g}s for it to be let go")
+                self._log(f"transit: {service} waits for {node}/{sib} (held by {', '.join(e['holders'])})")
+                await asyncio.sleep(max(0.01, min(TRANSIT_POLL_S, deadline - time.monotonic())))
+            if hold is not None:
+                hold(node, sib, f"in transit for {service} ({holder})")
+            r = await agent.stop_service_async(sib)
+            ok = bool(r is not None and getattr(r, "ok", False))
+            now = time.time()
+            row = {"node": node, "service": sib, "action": "stop", "ok": ok, "at": now,
+                   "reason": f"transit: {service} needs the box ({holder})",
+                   **({} if ok else {"error": getattr(r, "error", None) or "the node did not answer"})}
+            self.history.appendleft(row)
+            if not ok:
+                if unhold is not None:
+                    unhold(node, sib)
+                return f"could not stop '{sib}' on '{node}' to make way for '{service}': {row['error']}"
+            self.leases.forget(node, sib)
+            self.transits[(node, sib)] = {"for": service, "holder": holder, "since": now}
+            self._log(f"transit: stopped {node}/{sib} for {service} ({holder})")
+        self.save()
+        return None
+
+    def _end_transits(self, now: float) -> list[dict[str, Any]]:
+        """A transit ends when the service that displaced the sibling has no
+        holder left on that node: the sibling is routable again. It is NOT
+        started again here; on demand brings it back on the next ask."""
+        ended = []
+        unhold = getattr(self.cluster, "unhold", None)
+        entries = self.leases.entries()
+        for (node, sib), t in list(self.transits.items()):
+            e = entries.get((node, t["for"]))
+            if e and e["holders"]:
+                continue
+            del self.transits[(node, sib)]
+            if unhold is not None:
+                unhold(node, sib)
+            row = {"node": node, "service": sib, "action": "transit_ended", "ok": True, "at": now,
+                   "reason": f"{t['for']} has no holder left; {sib} is routable again (not restarted)"}
+            self.history.appendleft(row)
+            ended.append(row)
+            self._log(f"transit ended: {node}/{sib} ({t['for']} let go)")
+        return ended
+
     # ── the check ─────────────────────────────────────────────────────────
     async def check(self, now: Optional[float] = None, local=None) -> list[dict[str, Any]]:
         """Expire, tick, decide, act. Returns what was done this time."""
@@ -151,7 +245,7 @@ class Steward:
             running = self.running()
             self.leases.tick(running, now)
             await self._mark_orchestrated(running)
-            done = []
+            done = self._end_transits(now)
             for dec in decide(self.leases.entries(), running, self.policies, now=now, local=local):
                 agent = self.cluster.get_agent(dec.node)
                 if agent is None:
@@ -198,4 +292,6 @@ class Steward:
                 "last_check": self.last_check, "leases": self.leases.snapshot(),
                 "apps": {f"{n}/{s}": {"running": up, "policy": self.policy(s).to_dict()}
                          for (n, s), up in sorted(self.running().items()) if short_name(s)},
+                "transits": [{"node": n, "service": s, **t} for (n, s), t in sorted(self.transits.items())],
+                "holds": (self.cluster.holds() if hasattr(self.cluster, "holds") else {}),
                 "history": list(self.history)}
