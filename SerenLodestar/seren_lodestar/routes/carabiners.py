@@ -11,6 +11,12 @@ The Rack: the carabiners clipped on every node, and their settings
     POST /api/v1/rack/shelf/fetch                    {"tag": "v5.1.3"} optional: a release onto the shelf
     POST /api/v1/carabiner/{name}/upgrade            {"node", "downgrade"?, "reason"?}: the shelf's
                                                      <name>.kbh, sent to the node and swapped in there
+    POST /api/v1/carabiner/{name}/clip               {"node", "reason"?}: the shelf's <name>.kbh, sent
+                                                     to a node that has none (29 Oct 2026)
+    POST /api/v1/carabiner/{name}/unclip             {"node", "reason"?}: off that node's Rack; the
+                                                     file is kept there, the yaml stays
+    POST /api/v1/rack/wakes                          {"target": node | "local" | ""}: where Seren's
+                                                     wakes go (ripple.target), written to the yaml
 
 Lodestar carries a change to the node's Observatory, which runs the .kbh
 as the person whose yaml it is; the carabiner checks every value and says
@@ -25,13 +31,15 @@ the shelf: current, behind, ahead, different, or none.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from seren_sinew.carabiners import BELAY_PATH, LIST_PATH, SETTINGS_PATH, UPGRADE_PATH, SettingsRequest, UpgradeRequest
+from seren_sinew.carabiners import (BELAY_PATH, CLIP_PATH, LIST_PATH, SETTINGS_PATH, UNCLIP_PATH, UPGRADE_PATH,
+                                    SettingsRequest, UpgradeRequest)
 
 from ..shelf import Shelf, status as shelf_status
 
@@ -169,3 +177,74 @@ async def upgrade_carabiner(request: Request, name: str):
     status_code, out = await agent.carabiner_call_async("POST", _path(UPGRADE_PATH, name), req.to_dict(),
                                                         timeout=UPGRADE_TIMEOUT)
     return _named(status_code, out, node)
+
+
+async def _body_node(request: Request) -> tuple[dict[str, Any], str]:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    return body, str(body.get("node") or "")
+
+
+@router.post("/api/v1/carabiner/{name}/clip")
+async def clip_carabiner(request: Request, name: str):
+    """The shelf's <name>.kbh onto a node that has none. The node checks the
+    hash and writes the file; nothing of it runs there, and registering it
+    in its harness is the settings sheet's next step."""
+    body, node = await _body_node(request)
+    agent, refused = _agent(request, node)
+    if refused is not None:
+        return refused
+    try:
+        data, entry = await asyncio.to_thread(_shelf(request).get, name)
+    except LookupError as e:
+        return {"ok": False, "carabiner": name, "node": node, "error": str(e)}
+    req = UpgradeRequest.carrying(data, node=node, version=entry["version"], source=entry["source"],
+                                  holder=HOLDER, reason=str(body.get("reason") or "")[:200])
+    status_code, out = await agent.carabiner_call_async("POST", _path(CLIP_PATH, name), req.to_dict(), timeout=60.0)
+    return _named(status_code, out, node)
+
+
+@router.post("/api/v1/carabiner/{name}/unclip")
+async def unclip_carabiner(request: Request, name: str):
+    body, node = await _body_node(request)
+    agent, refused = _agent(request, node)
+    if refused is not None:
+        return refused
+    status_code, out = await agent.carabiner_call_async(
+        "POST", _path(UNCLIP_PATH, name), {"node": node, "holder": HOLDER, "reason": str(body.get("reason") or "")[:200]},
+        timeout=60.0)
+    return _named(status_code, out, node)
+
+
+@router.post("/api/v1/rack/wakes")
+async def set_wakes(request: Request):
+    """Where Seren's wakes go: ripple.target, changed from the page. A node of
+    this cluster, "local" (Lodestar's own box) or blank (off). Written into
+    Lodestar's own yaml with its comments kept (seren_sinew.yamledit) and
+    taken up at once; with no yaml to write it holds until a restart, and the
+    answer says so."""
+    body, _ = await _body_node(request)
+    target = str(body.get("target") or "").strip()
+    cluster = request.app.state.cluster
+    if target not in ("", "local") and cluster.get_agent(target) is None:
+        return JSONResponse({"ok": False, "error": f"'{target}' is not a node in this cluster "
+                                                   f"(a node's name, 'local', or blank for off)"}, status_code=404)
+    cfg = request.app.state.config
+    was = getattr(cfg.ripple, "target", "") or ""
+    path = getattr(cfg, "config_path", None) or ""
+    written = ""
+    if path:
+        from seren_sinew import yamledit
+        try:
+            text = await asyncio.to_thread(Path(path).read_text, encoding="utf-8")
+            await asyncio.to_thread(yamledit.write, path, yamledit.set(text, "ripple.target", target))
+            written = path
+        except (OSError, ValueError) as e:
+            return JSONResponse({"ok": False, "error": f"could not write {path}: {e}; nothing changed"},
+                                status_code=500)
+    cfg.ripple.target = target
+    return {"ok": True, "was": was, "target": target, "written": written,
+            "note": "" if written else "Lodestar runs with no config file, so this holds until it restarts"}

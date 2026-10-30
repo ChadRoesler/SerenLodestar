@@ -1948,12 +1948,74 @@ function rackSummary(manifest) {
     return said.join(' · ') || 'on its own defaults';
 }
 
-function renderRack(data) {
+// Where the wakes go (29 Oct 2026): a select of this cluster's nodes, local,
+// or off; the change is written into Lodestar's yaml with its comments kept.
+function renderWakes(data) {
     const target = data.wakes?.target || '';
-    document.getElementById('rack-wakes').innerHTML = target
+    const names = (data.nodes || []).map(n => n.node);
+    const choices = [['', 'off'], ['local', "local (Lodestar's own box)"], ...names.map(n => [n, n])];
+    if (target && !choices.some(([v]) => v === target)) choices.push([target, `${target} (not in this cluster)`]);
+    const opts = choices.map(([v, l]) => `<option value="${escapeHtml(v)}" ${v === target ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('');
+    document.getElementById('rack-wakes').innerHTML = (target
         ? `Seren's wakes go to <b>${escapeHtml(target)}</b>${target === 'local' ? " (Lodestar's own box)" : ''}. `
-          + `<span class="rack-dim">Set by ripple.target in Lodestar's config.</span>`
-        : `Wakes are off: ripple.target in Lodestar's config is empty.`;
+        : `Wakes are off. `)
+        + `<span class="rack-dim">ripple.target in Lodestar's config.</span> `
+        + `<label class="rack-inline">send them to <select id="rack-wakes-target" aria-label="where wakes go">${opts}</select></label> `
+        + `<button class="upg-btn" id="rack-wakes-set">change</button>`;
+}
+
+async function rackSetWakes() {
+    const sel = document.getElementById('rack-wakes-target');
+    const btn = document.getElementById('rack-wakes-set');
+    if (!sel || !btn) return;
+    const target = sel.value;
+    btn.disabled = true;
+    const r = await hostApi('/api/v1/rack/wakes', { method: 'POST', json: { target } });
+    if (r?.ok) rackFlash(`Wakes ${target ? 'go to ' + target : 'are off'} now (were ${r.was || 'off'}). `
+        + (r.written ? `Written to ${r.written}, the old file kept beside it.` : (r.note || '')), 'ok');
+    else rackFlash(r?.error || 'no answer', 'error');
+    await refreshRack();
+}
+
+function rackClipOffers(n, shelf) {
+    const clipped = new Set((n.carabiners || []).map(c => c.carabiner));
+    const offers = (shelf || []).filter(s => s.carabiner && !clipped.has(s.carabiner));
+    if (!offers.length) return '';
+    return `<div class="rack-actions rack-clip">` + offers.map(s =>
+        `<button class="upg-btn" data-rack-clip="${escapeHtml(n.node + '/' + s.carabiner)}" data-version="${escapeHtml(s.version || '')}"
+           title="put ${escapeHtml(s.carabiner)}.kbh from the shelf on ${escapeHtml(n.node)}">clip ${escapeHtml(s.carabiner)}.kbh ${escapeHtml(s.version || '')}</button>`).join(' ')
+        + `</div>`;
+}
+
+async function rackClip(btn) {
+    const [node, name] = btn.dataset.rackClip.split('/');
+    if (!confirm(`Clip ${name}.kbh ${btn.dataset.version} from the shelf onto ${node}?\n\n`
+        + `The file is checked and written there; nothing of it runs. Registering it in its harness is the next step, from its settings.`)) return;
+    btn.disabled = true;
+    btn.textContent = 'clipping…';
+    const r = await hostApi(`/api/v1/carabiner/${encodeURIComponent(name)}/clip`,
+        { method: 'POST', json: { node, reason: 'from the Rack' } });
+    if (r?.ok) rackFlash(`${node}: ${name}.kbh ${r.now || ''} is clipped. Open its settings to register it.`, 'ok');
+    else rackFlash(`${node}: ${r?.error || 'no answer'}`, 'error');
+    await refreshRack();
+}
+
+async function rackUnclip(btn) {
+    const [node, name] = btn.dataset.rackUnclip.split('/');
+    if (!confirm(`Take ${name}.kbh off ${node}?\n\n`
+        + `The file is kept beside itself and its settings file stays, so a re-clip finds them. `
+        + `What it registered in its harness (hooks, an MCP server, a bookmark) stays registered.`)) return;
+    btn.disabled = true;
+    btn.textContent = 'unclipping…';
+    const r = await hostApi(`/api/v1/carabiner/${encodeURIComponent(name)}/unclip`,
+        { method: 'POST', json: { node, reason: 'from the Rack' } });
+    if (r?.ok) rackFlash(`${node}: ${name}.kbh ${r.was || ''} is off the Rack, kept at ${r.kept || '?'}. ${r.note || ''}`, 'ok');
+    else rackFlash(`${node}: ${r?.error || 'no answer'}`, 'error');
+    await refreshRack();
+}
+
+function renderRack(data) {
+    renderWakes(data);
     renderShelf(data.shelf || []);
     const grid = document.getElementById('rack-grid');
     const nodes = data.nodes || [];
@@ -1963,7 +2025,7 @@ function renderRack(data) {
         let inner;
         if (!n.online) inner = '<div class="rack-note">offline</div>';
         else if (!n.set_up) inner = `<div class="rack-note warn">${escapeHtml(n.error || 'carabiners are not set up on this node')}</div>`;
-        else if (!n.carabiners.length) inner = '<div class="rack-note">nothing clipped on this box yet</div>';
+        else if (!n.carabiners.length) inner = '<div class="rack-note">nothing clipped on this box yet</div>' + rackClipOffers(n, data.shelf);
         else inner = n.carabiners.map(c => {
             const m = c.manifest;
             const name = m?.display || c.carabiner;
@@ -1978,8 +2040,9 @@ function renderRack(data) {
               <div class="rack-actions">
                 <button class="upg-btn" data-rack-open="${escapeHtml(id)}" ${m ? '' : 'disabled'}>settings</button>
                 <button class="upg-btn" data-rack-belay="${escapeHtml(id)}">check it holds</button>
+                <button class="upg-btn" data-rack-unclip="${escapeHtml(id)}" title="take it off this box; the file and its settings are kept">unclip</button>
               </div></div>`;
-        }).join('');
+        }).join('') + rackClipOffers(n, data.shelf);
         return `<section class="rack-node${n.online ? '' : ' offline'}">
           <div class="rack-node-name"><span class="led ${led}"></span>${escapeHtml(n.node)}</div>${inner}</section>`;
     }).join('');
@@ -2170,6 +2233,13 @@ function initRack() {
         if (belay) rackBelay(belay.dataset.rackBelay);
         const upgrade = e.target.closest('[data-rack-upgrade]');
         if (upgrade) rackUpgrade(upgrade);
+        const clip = e.target.closest('[data-rack-clip]');
+        if (clip) rackClip(clip);
+        const unclip = e.target.closest('[data-rack-unclip]');
+        if (unclip) rackUnclip(unclip);
+    });
+    document.getElementById('rack-wakes').addEventListener('click', (e) => {
+        if (e.target.closest('#rack-wakes-set')) rackSetWakes();
     });
     document.getElementById('rack-fetch').addEventListener('click', async (e) => {
         e.target.disabled = true;
