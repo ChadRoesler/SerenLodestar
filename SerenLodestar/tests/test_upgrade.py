@@ -418,3 +418,59 @@ def test_the_routes_and_the_tools(tmp_path):
         assert c.get("/api/v1/upgrade/nope").status_code == 404
         names = {t.name for t in asyncio.run(c.app.state.tool_client.list_tools_async())}
         assert {"upgrade_plan", "upgrade_start", "upgrade_status", "upgrade_behind"} <= names
+
+
+def test_the_next_lodestar_waits_for_discovery_before_closing_its_own_hand_off(tmp_path):
+    # 8 Nov 2026: resume() ran before discovery had found the nuc, took "no agent" for "gone",
+    # and closed a self-upgrade that had worked as failed one second after the new Lodestar came up.
+    nuc = FakeAgent()
+    svc, _nuc, _nano = _world(tmp_path, nuc=nuc)
+
+    async def first_life():
+        nuc.silent.add("job-2")
+        _s, out = svc.start(nodes=["nuc"], services=["memory", "lodestar"])
+        for _ in range(500):
+            if svc.load(out["run"]["id"])["state"] == "handed_off":
+                break
+            await asyncio.sleep(0.01)
+        svc._task.cancel()
+        return out["run"]["id"]
+    rid = asyncio.run(first_life())
+    nuc.silent.clear()
+
+    again, _n, _m = _world(tmp_path, nuc=nuc)
+    found = again._cluster.nodes
+    later = dict(found)
+    again._cluster.nodes = {}                           # discovery hasn't run yet
+
+    async def discovery():
+        await asyncio.sleep(0.05)
+        again._cluster.nodes = later                    # ...and now it has
+
+    async def go():
+        closing = asyncio.ensure_future(again.resume())
+        await discovery()
+        return await closing
+    assert asyncio.run(go()) == [rid]
+    run = again.load(rid)
+    assert run["state"] == "done" and run["steps"][-1]["state"] == "done"
+
+
+def test_a_node_that_never_comes_back_still_closes_the_run(tmp_path):
+    nuc = FakeAgent()
+    svc, _nuc, _nano = _world(tmp_path, nuc=nuc)
+
+    async def first_life():
+        nuc.silent.add("job-2")
+        _s, out = svc.start(nodes=["nuc"], services=["memory", "lodestar"])
+        for _ in range(500):
+            if svc.load(out["run"]["id"])["state"] == "handed_off":
+                break
+            await asyncio.sleep(0.01)
+        svc._task.cancel()
+        return out["run"]["id"]
+    rid = asyncio.run(first_life())
+    again, _n, _m = _world(tmp_path, nuc=nuc, job_timeout=0.1)
+    again._cluster.nodes = {}
+    assert asyncio.run(again.resume()) == [rid]
+    assert again.load(rid)["error"] == "handed off, but the job or its node is gone"

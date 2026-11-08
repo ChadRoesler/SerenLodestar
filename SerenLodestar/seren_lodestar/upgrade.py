@@ -582,6 +582,18 @@ class UpgradeService:
             run["state"] = self._outcome(run)
 
     # ── after a restart ───────────────────────────────────────────────────
+    async def _agent_when_found(self, node: str) -> Any:
+        """The node's agent, waiting for discovery to find it. resume() runs the
+        moment this Lodestar starts, which is before discovery has seen any node:
+        asking once and taking None for "gone" closed every self-upgrade as failed
+        a second after the new Lodestar came up, the upgrade itself having worked."""
+        deadline = time.monotonic() + self.job_timeout
+        while True:
+            agent = self._cluster.get_agent(node)
+            if agent is not None or time.monotonic() >= deadline:
+                return agent
+            await asyncio.sleep(self.poll)
+
     async def resume(self) -> list[str]:
         """At startup: a run this Lodestar handed off (its own upgrade) is
         followed to its end and closed. Returns the runs closed."""
@@ -590,7 +602,7 @@ class UpgradeService:
             if run.get("state") != "handed_off":
                 continue
             step = next((s for s in run["steps"] if s.get("state") == "handed_off" and s.get("job")), None)
-            agent = self._cluster.get_agent(step["node"]) if step else None
+            agent = await self._agent_when_found(step["node"]) if step else None
             if step is None or agent is None:
                 run["state"], run["error"] = "failed", "handed off, but the job or its node is gone"
             else:
