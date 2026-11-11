@@ -1,5 +1,5 @@
 'use strict';
-/* global getToken, escapeHtml, showTab — provided by the SerenMeninges shell.
+/* global getToken, escapeHtml, showTab, watch, keepingScroll — provided by the SerenMeninges shell.
  *
  * Carved from the pre-baseplate RuntimeHost (now Lodestar) monolith. The shell now owns the
  * page chrome, the header, and the 🔑 bearer-token modal. Two deliberate
@@ -174,14 +174,15 @@ function symbolFor(status) {
 }
 
 // ----------------------------------------------------------------------
-// POLLING — managed handle so the modal can swap rates when open
+// POLLING — the shell's watch() does it (started in MAIN): the grid is
+// redrawn only when the cluster's answer changed. The modal swaps the rate
+// while it is open.
 // ----------------------------------------------------------------------
 const MODAL_POLL_INTERVAL = 2000;
-let pollHandle = null;
+let poller = null;
 
 function startPolling(intervalMs) {
-    if (pollHandle !== null) clearInterval(pollHandle);
-    pollHandle = setInterval(refresh, intervalMs);
+    if (poller) poller.every(intervalMs);
 }
 
 // ----------------------------------------------------------------------
@@ -1034,12 +1035,17 @@ function renderNode(node) {
 // ----------------------------------------------------------------------
 // REFRESH CYCLE
 // ----------------------------------------------------------------------
-async function refresh() {
+// Ask now, not at the next tick: after an action, or when the modal opens.
+function refresh() {
+    return poller ? poller.check() : Promise.resolve();
+}
+
+// One answer made of two requests: the status and the capability map.
+// hostApi() returns null (and banners) when it could not reach the host;
+// here that is a throw, so watch() hands it to clusterUnreachable.
+async function fetchCluster() {
     const status = await hostApi('/api/v1/system/status');
-    if (!status) {
-        setLed('down', 'unreachable');
-        return;
-    }
+    if (!status) throw new Error('unreachable');
 
     const caps = await hostApi('/api/v1/cluster/capabilities');
 
@@ -1050,15 +1056,26 @@ async function refresh() {
             node.services[svcName] = { status: svcData.status };
         }
     }
+    return { status, caps };
+}
 
-    renderGrid(status);
-    renderGaps(status, caps);
-    setOverallLed(status, caps);
-    setLastRefresh();
+function clusterUnreachable() {
+    setLed('down', 'unreachable');
+}
 
+// Every answer, changed or not: the things that follow the clock.
+function heardCluster({ status }) {
     window._lastStatus = status;
+    setLastRefresh();
     refreshModal();
     if (upgradesVisible()) refreshUpgrades();
+}
+
+// Only when the answer changed. The glance row keeps the page it was on.
+function paintCluster({ status, caps }) {
+    keepingScroll(document.getElementById('grid'), () => renderGrid(status));
+    renderGaps(status, caps);
+    setOverallLed(status, caps);
 }
 
 function renderGrid(status) {
@@ -2290,5 +2307,8 @@ initUpgrades();
 initRunModal();
 initPkgModal();
 initGlance();
-refresh();
-startPolling(POLL_INTERVAL);
+poller = watch('/api/v1/system/status', POLL_INTERVAL, paintCluster, {
+    fetch: fetchCluster,
+    each: heardCluster,
+    onError: clusterUnreachable,
+});
