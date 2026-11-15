@@ -26,9 +26,9 @@ from seren_lodestar.dtos import JetsonNodeOptions, NodeManifest, NodeResponse
 
 UI = Path(__file__).resolve().parents[1] / "seren_lodestar" / "viewer" / "ui"
 
-CLIP = {"carabiner": "claude", "node": "desktop", "kbh": "C:/Users/alice/seren/wren/kbh/claude.kbh",
+CLIP = {"carabiner": "claude", "node": "desktop", "kbh": "C:/Users/alice/seren/ada/kbh/claude.kbh",
         "configured": True, "version": "5.1.3+1f116ed", "sha256": "a" * 64, "present": True, "rack": False,
-        "found_by": ["ledger"], "install": {"instance": "wren", "installed_at": "2026-10-23T18:00:00Z",
+        "found_by": ["ledger"], "install": {"instance": "ada", "installed_at": "2026-10-23T18:00:00Z",
                                             "source": "release", "source_ref": "v5.1.3", "project": "", "record": ""}}
 
 

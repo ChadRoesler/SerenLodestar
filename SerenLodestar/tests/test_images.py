@@ -59,7 +59,7 @@ def nodes_of(workflow, kind):
 # ── a request -> a workflow ──────────────────────────────────────────────
 
 def test_krea2_is_the_portrait_recipe():
-    p = ct.plan(CATALOG, {"prompt": "a wren on a lantern-lit chair", "seed": 7,
+    p = ct.plan(CATALOG, {"prompt": "a fox on a snowy hill", "seed": 7,
                           "loras": [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.7},
                                     {"name": "watercolor ink", "weight": 0.5}]})
     w = p.workflow
@@ -73,7 +73,7 @@ def test_krea2_is_the_portrait_recipe():
     k = nodes_of(w, "KSampler")[0]["inputs"]
     assert (k["steps"], k["cfg"], k["sampler_name"], k["scheduler"], k["seed"]) == (8, 1.0, "euler", "simple", 7)
     assert k["model"] == ["L1", 0] and nodes_of(w, "ConditioningZeroOut")
-    assert p.prompt == "storybook folk art illustration, a wren on a lantern-lit chair", "the LoRA's trigger leads"
+    assert p.prompt == "storybook folk art illustration, a fox on a snowy hill", "the LoRA's trigger leads"
     assert nodes_of(w, "SaveImage")[0]["inputs"]["filename_prefix"] == "seren/7"
 
 
@@ -205,12 +205,12 @@ def test_a_picture_from_words_through_a_real_observatory(tmp_path, monkeypatch):
         assert model["style"]["style"] == "prose" and "Sentences" in model["style"]["guide"], "how to prompt it rides with the model"
         assert "style" not in cat["files"]["loras/Storybook_Folk_Art_Krea2.safetensors"]
 
-        plan = c.post("/api/v1/image/plan", json={"prompt": "a wren", "seed": 7,
+        plan = c.post("/api/v1/image/plan", json={"prompt": "a fox", "seed": 7,
                                                   "loras": [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.7}]}).json()
         assert plan["ok"] and plan["model"].endswith("krea2TurboOfficialComfy_krea2TurboBf16.safetensors")
         assert plan["loras"] == [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.7, "fit": "good"}]
 
-        out = c.post("/api/v1/image", json={"prompt": "a wren", "seed": 7, "holder": "wren",
+        out = c.post("/api/v1/image", json={"prompt": "a fox", "seed": 7, "holder": "ada",
                                             "loras": [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.7}]}).json()
         assert out["ok"] and base64.b64decode(out["images"][0]["data"]) == b"PNG" and out["seed"] == 7
         assert drawn["running"] is True, "ComfyUI was up while it drew"
@@ -219,7 +219,7 @@ def test_a_picture_from_words_through_a_real_observatory(tmp_path, monkeypatch):
         # ComfyUI brought up by hand (or left up): still put away after a draw
         # when nobody else holds it (15 Oct 2026: the Spark's ran all night)
         box["running"], box["stops"] = True, 0
-        assert c.post("/api/v1/image", json={"prompt": "a wren", "seed": 7, "holder": "wren"}).json()["ok"]
+        assert c.post("/api/v1/image", json={"prompt": "a fox", "seed": 7, "holder": "ada"}).json()["ok"]
         assert box["stops"] == 1 and box["running"] is False, "put away, whoever started it"
 
         # An edited plan is drawn as it is.
@@ -235,7 +235,7 @@ def test_a_picture_from_words_through_a_real_observatory(tmp_path, monkeypatch):
                                                    "loras": [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.4}]})
         assert r.status_code == 200, r.text
         assert (home / ".seren" / "comfy" / "profiles.json").is_file()
-        again = c.post("/api/v1/image/plan", json={"prompt": "a wren"}).json()
+        again = c.post("/api/v1/image/plan", json={"prompt": "a fox"}).json()
         assert again["loras"] == [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.4, "fit": "good"}]
         assert c.put("/api/v1/comfy/profiles", json={"model": "nope"}).status_code == 404
         assert c.put("/api/v1/comfy/profiles", json={"model": "krea2Turbo", "loras": [{"name": "zzz"}]}).status_code == 400
@@ -325,9 +325,9 @@ def test_the_node_is_picked_by_what_it_can_draw(monkeypatch):
         assert k["nodes"] == ["node-d", "node-c"] and k["drawable_on"] == ["node-d"]
         assert cat["files"]["checkpoints/autismmixSDXL_autismmixPony.safetensors"]["drawable_on"] == order
 
-        assert c.post("/api/v1/image", json={"prompt": "a wren"}).json()["node"] == "node-d", "Krea 2: the Spark"
+        assert c.post("/api/v1/image", json={"prompt": "a fox"}).json()["node"] == "node-d", "Krea 2: the Spark"
         order.reverse()                                       # the Xavier is preferred now
-        assert c.post("/api/v1/image", json={"prompt": "a wren"}).json()["node"] == "node-d", \
+        assert c.post("/api/v1/image", json={"prompt": "a fox"}).json()["node"] == "node-d", \
             "still the Spark: the Xavier keeps Krea 2's files but cannot draw it"
         assert c.post("/api/v1/image", json={"prompt": "a fox", "model": "autismmix"}).json()["node"] == "node-c"
         xavier.up = False
@@ -335,7 +335,7 @@ def test_the_node_is_picked_by_what_it_can_draw(monkeypatch):
         assert out["node"] == "node-d" and out["skipped"] == ["node-c: asleep"], "one asleep: the next draws"
         plan = c.post("/api/v1/image/plan", json={"prompt": "a fox", "model": "autismmix"}).json()
         assert plan["node"] == "node-c" and plan["also"] == ["node-d"]
-        only = c.post("/api/v1/image/plan", json={"prompt": "a wren", "node": "node-c"})
+        only = c.post("/api/v1/image/plan", json={"prompt": "a fox", "node": "node-c"})
         assert only.status_code == 400 and "does not draw krea2" in only.json()["nodes"][0]
         comp = c.get("/api/v1/comfy/compatible", params={"model": "krea2TurboOfficialComfy"}).json()
         assert comp["drawable_on"] == ["node-d"] and comp["node"] == "node-d"

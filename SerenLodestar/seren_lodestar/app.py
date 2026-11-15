@@ -33,6 +33,7 @@ Serves:
     GET  /api/v1/chat/last_user_at              — last user activity
     POST /api/v1/chat/inspect                   — debug tool injection
     POST /api/v1/chat/stream                    — streamed chat
+    GET/POST /api/v1/talk/{mouth}[/...]         — a voice conversation: heard, say, audio, played (prototype)
     /mcp                                        — MCP transport endpoint
 
 Integrates seren_meninges (config/auth/viewer baseplate) and seren_sinew
@@ -63,6 +64,7 @@ from .routes import images as images_routes
 from .routes import hearing as hearing_routes
 from .routes import listening as listening_routes
 from .routes import speaking as speaking_routes
+from .routes import talking as talking_routes
 from .routes import gallery as gallery_routes
 from .routes import agent_update as agent_update_routes
 from .routes import backup as backup_routes
@@ -337,6 +339,7 @@ def create_app(config: Optional[LodestarConfig] = None) -> FastAPI:
     app.include_router(hearing_routes.router)
     app.include_router(listening_routes.router)
     app.include_router(speaking_routes.router)
+    app.include_router(talking_routes.router)
     app.include_router(gallery_routes.router)
     app.include_router(agent_update_routes.router)
 

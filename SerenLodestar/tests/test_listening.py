@@ -76,7 +76,7 @@ def road(tmp_path, monkeypatch):
 def test_a_clip_and_a_question_wake_the_listener_and_its_words_come_back(road):
     c, box = road
     r = c.post("/api/v1/listen", files={"file": ("me.wav", WAV, "audio/wav")},
-               data={"prompt": "how does this voice sound?", "holder": "wren"})
+               data={"prompt": "how does this voice sound?", "holder": "ada"})
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True, "text": "A low, warm voice, unhurried.", "node": "bigbox", "seconds": 2.5,
                         "clip_seconds": 4.0, "cut": False, "model": "Qwen/Qwen3-Omni-30B-A3B-Instruct"}

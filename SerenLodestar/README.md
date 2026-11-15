@@ -366,7 +366,7 @@ the cluster isn't required, so you can still pick and choose. Lodestar sends
 every node's versions with each upgrade; when the new version needs a newer
 peer than the cluster runs, the Observatory ends the job **held**, nothing
 touched, with the reason (`seren-corpus-callosum 5.3.0 needs
-seren-memory>=5.2; seren-memory-wren on nuc is 5.1.0`). Stores go first in a
+seren-memory>=5.2; seren-memory-ada on nuc is 5.1.0`). Stores go first in a
 run, so when Memory and the Callosum both move, the Callosum sees the new
 Memory. The stores' side of the deal: within a major version, only add. Raise
 a reader's floor in the same commit that starts using what the newer peer

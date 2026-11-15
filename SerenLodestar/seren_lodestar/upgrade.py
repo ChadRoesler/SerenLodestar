@@ -119,7 +119,7 @@ def _norm(name: str) -> str:
 
 
 def short_name(service: str) -> Optional[str]:
-    """'seren-corpus-callosum-wren' / 'SerenCorpusCallosum-wren' -> 'corpuscallosum'.
+    """'seren-corpus-callosum-ada' / 'SerenCorpusCallosum-ada' -> 'corpuscallosum'.
     None for anything that is not a seren service."""
     n = _norm(service)
     if not n.startswith("seren"):

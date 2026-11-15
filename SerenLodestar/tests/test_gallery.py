@@ -46,9 +46,9 @@ class FakeAgent:
 def _cluster():
     node_a = FakeAgent("node-a", {"2026-10-15": ["a.png", "b.png"], "2026-10-14": ["old.png"]})
     node_b = FakeAgent("node-b", {})
-    snaps = {"node-a": NodeSnapshot(online=True, installed_services=["seren-memory-wren", "seren-workbench-wren"], status={}),
-             "node-b": NodeSnapshot(online=True, installed_services=["seren-observatory-wren"], status={}),
-             "node-c": NodeSnapshot(online=False, installed_services=["SerenWorkbench-wren"], status={})}
+    snaps = {"node-a": NodeSnapshot(online=True, installed_services=["seren-memory-ada", "seren-workbench-ada"], status={}),
+             "node-b": NodeSnapshot(online=True, installed_services=["seren-observatory-ada"], status={}),
+             "node-c": NodeSnapshot(online=False, installed_services=["SerenWorkbench-ada"], status={})}
     agents = {"node-a": node_a, "node-b": node_b, "node-c": FakeAgent("node-c", {})}
     return SimpleNamespace(get_snapshots=lambda: snaps, get_agent=lambda n: agents.get(n)), node_a
 
@@ -59,7 +59,7 @@ def test_every_nodes_gallery_at_one_address():
         c.app.state.cluster = cluster
         r = c.get("/api/v1/gallery").json()
         assert r["count"] == 3 and [n["node"] for n in r["nodes"]] == ["node-a"], "a node without a Workbench, and an offline one, are not asked"
-        assert r["nodes"][0]["service"] == "seren-workbench-wren" and node_a.asked == ["api/v1/service/seren-workbench-wren/gallery"]
+        assert r["nodes"][0]["service"] == "seren-workbench-ada" and node_a.asked == ["api/v1/service/seren-workbench-ada/gallery"]
         day = c.get("/api/v1/gallery/node-a/2026-10-15").json()
         assert day["node"] == "node-a" and [p["file"] for p in day["pictures"]] == ["a.png", "b.png"]
         assert c.get("/api/v1/gallery/node-a/2026-10-16").status_code == 404

@@ -32,17 +32,17 @@ UI = Path(__file__).resolve().parents[1] / "seren_lodestar" / "viewer" / "ui"
 
 
 def test_the_family_and_idle_ride_through_the_dtos():
-    st = _from_dict({"service": "seren-probe-wren", "running": True, "orchestrated": False,
+    st = _from_dict({"service": "seren-probe-ada", "running": True, "orchestrated": False,
                      "parent": None,
                      "children": [{"name": "seren-probe-target-memory-1", "kind": "container", "running": True,
                                    "memory_mb": 210, "cpu_percent": 1.5}]}, ServiceStatus)
     assert st.children[0]["name"] == "seren-probe-target-memory-1" and st.children[0]["memory_mb"] == 210
     idle = _from_dict({"service": "llama", "running": False, "orchestrated": True, "idle": True}, ServiceStatus)
     assert idle.idle is True and idle.orchestrated is True
-    child = _from_dict({"manifest": {"service": "searxng", "service_type": "docker_compose", "parent": "seren-workbench-wren"},
-                        "status": {"service": "searxng", "running": True, "parent": "seren-workbench-wren"}}, ServiceEntry)
-    assert child.manifest.parent == "seren-workbench-wren" and child.status.parent == "seren-workbench-wren"
-    owner = _from_dict({"service": "seren-probe-wren", "children": {"docker_project": "seren-probe-*"}}, ServiceManifest)
+    child = _from_dict({"manifest": {"service": "searxng", "service_type": "docker_compose", "parent": "seren-workbench-ada"},
+                        "status": {"service": "searxng", "running": True, "parent": "seren-workbench-ada"}}, ServiceEntry)
+    assert child.manifest.parent == "seren-workbench-ada" and child.status.parent == "seren-workbench-ada"
+    owner = _from_dict({"service": "seren-probe-ada", "children": {"docker_project": "seren-probe-*"}}, ServiceManifest)
     assert owner.children == {"docker_project": "seren-probe-*"}
 
 

@@ -79,8 +79,8 @@ class FakeCluster:
 
 
 def _world(tmp_path=None, up=None):
-    agent = FakeAgent("nuc", up or {"seren-probe-wren": True, "seren-memory-wren": True,
-                                    "seren-observatory-wren": True, "llama": False})
+    agent = FakeAgent("nuc", up or {"seren-probe-ada": True, "seren-memory-ada": True,
+                                    "seren-observatory-ada": True, "llama": False})
     st = Steward(FakeCluster(agent), Policies.from_dict(POLICIES),
                  (tmp_path / "orchestration" / "leases.json") if tmp_path else None, lease_ttl_seconds=3600)
     return st, agent
@@ -90,7 +90,7 @@ def test_the_block_and_where_the_book_lives(tmp_path):
     oc = OrchestrationConfig.from_dict({"lease_ttl_minutes": 30, "check_seconds": 1, "default": {"idle_minutes": 5},
                                         "apps": {"theatre": "on_demand"}})
     assert oc.lease_ttl_minutes == 30 and oc.check_seconds == 5.0, "a check is never more often than 5s"
-    assert oc.policies.for_service("seren-theatre-wren").mode == "on_demand"
+    assert oc.policies.for_service("seren-theatre-ada").mode == "on_demand"
     assert oc.policies.for_service("llama").idle_minutes == 5
     cfg = LodestarConfig(config_path=str(tmp_path / "seren-lodestar.yaml"))
     assert resolved_state_file(cfg) == (tmp_path / "orchestration" / "leases.json").resolve()
@@ -102,15 +102,15 @@ def test_a_check_stops_an_idle_on_demand_app_and_nothing_else(tmp_path):
 
     async def go():
         assert await st.check(now=0) == []                    # the idle clocks start
-        assert agent.marked == ["seren-probe-wren"], "on_demand: off will read as idle"
+        assert agent.marked == ["seren-probe-ada"], "on_demand: off will read as idle"
         assert await st.check(now=9 * 60) == []
         done = await st.check(now=11 * 60)
         return done
     done = asyncio.run(go())
-    assert [(d["service"], d["action"], d["ok"]) for d in done] == [("seren-probe-wren", "stop", True)]
-    assert agent.stops == ["seren-probe-wren"], "memory is always, the Observatory never, llama is off"
-    assert ("nuc", "seren-probe-wren") not in st.leases.entries()
-    assert st.describe()["history"][0]["service"] == "seren-probe-wren"
+    assert [(d["service"], d["action"], d["ok"]) for d in done] == [("seren-probe-ada", "stop", True)]
+    assert agent.stops == ["seren-probe-ada"], "memory is always, the Observatory never, llama is off"
+    assert ("nuc", "seren-probe-ada") not in st.leases.entries()
+    assert st.describe()["history"][0]["service"] == "seren-probe-ada"
     assert (tmp_path / "orchestration" / "leases.json").is_file()
 
 
@@ -118,21 +118,21 @@ def test_held_means_kept_and_a_lease_that_runs_out_lets_go(tmp_path):
     st, agent = _world(tmp_path)
 
     async def go():
-        st.leases.acquire("nuc", "seren-probe-wren", "seren-workbench", started=False, ttl=1800, now=0)
+        st.leases.acquire("nuc", "seren-probe-ada", "seren-workbench", started=False, ttl=1800, now=0)
         await st.check(now=0)
         assert await st.check(now=25 * 60) == [], "held: kept"
         assert await st.check(now=31 * 60) == [], "the lease ran out at 30: idle from then"
         return await st.check(now=42 * 60)
-    assert [d["service"] for d in asyncio.run(go())] == ["seren-probe-wren"]
+    assert [d["service"] for d in asyncio.run(go())] == ["seren-probe-ada"]
 
 
 def test_the_book_survives_a_restart(tmp_path):
     st, agent = _world(tmp_path)
-    st.leases.acquire("nuc", "seren-probe-wren", "seren-workbench", started=True, ttl=1800, now=100)
+    st.leases.acquire("nuc", "seren-probe-ada", "seren-workbench", started=True, ttl=1800, now=100)
     st.save()
     again, _ = _world(tmp_path)
-    assert again.leases.node_of("seren-probe-wren", "seren-workbench") == "nuc"
-    assert again.leases.entries()[("nuc", "seren-probe-wren")]["started"] is True
+    assert again.leases.node_of("seren-probe-ada", "seren-workbench") == "nuc"
+    assert again.leases.entries()[("nuc", "seren-probe-ada")]["started"] is True
 
 
 def _client(tmp_path, st):
@@ -146,21 +146,21 @@ def _client(tmp_path, st):
 
 
 def test_ensure_by_short_name_and_a_release_that_lingers(tmp_path):
-    st, agent = _world(tmp_path, up={"seren-probe-wren": False, "seren-memory-wren": True, "seren-memory-alice": True})
+    st, agent = _world(tmp_path, up={"seren-probe-ada": False, "seren-memory-ada": True, "seren-memory-alice": True})
     c = _client(tmp_path, st)
     try:
         d = c.post("/api/v1/service/probe/ensure", json={"holder": "seren-workbench", "ttl_seconds": 600}).json()
-        assert d["ok"] and d["ready"] and d["started"] and d["service"] == "seren-probe-wren", d
+        assert d["ok"] and d["ready"] and d["started"] and d["service"] == "seren-probe-ada", d
         lease = c.get("/api/v1/cluster/leases").json()["leases"][0]
-        assert lease["service"] == "seren-probe-wren" and 0 < lease["expires_in"]["seren-workbench"] <= 600
+        assert lease["service"] == "seren-probe-ada" and 0 < lease["expires_in"]["seren-workbench"] <= 600
         rel = c.post("/api/v1/service/probe/release", json={"holder": "seren-workbench"}).json()
         assert rel["ok"] and rel["stopped"] is False and agent.stops == [], "on_demand: the policy decides, later"
-        assert st.leases.entries()[("nuc", "seren-probe-wren")]["idle_since"] is not None
+        assert st.leases.entries()[("nuc", "seren-probe-ada")]["idle_since"] is not None
         amb = c.post("/api/v1/service/memory/ensure", json={"holder": "x"}).json()
         assert amb["ok"] is False and "ambiguous" in amb["error"] and "seren-memory-alice" in amb["error"]
         o = c.get("/api/v1/orchestration").json()
         assert o["ok"] and o["policies"]["apps"]["probe"]["mode"] == "on_demand"
-        assert o["apps"]["nuc/seren-probe-wren"]["policy"]["mode"] == "on_demand"
+        assert o["apps"]["nuc/seren-probe-ada"]["policy"]["mode"] == "on_demand"
         assert c.post("/api/v1/orchestration/check").json()["ok"]
         names = {t.name for t in asyncio.run(c.app.state.tool_client.list_tools_async())}
         assert "orchestration_status" in names

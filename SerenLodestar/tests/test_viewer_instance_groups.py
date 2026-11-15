@@ -1,6 +1,6 @@
 """
 Instance groups on the node cards (design note, 16 Oct 2026): a node carrying
-seren-loci-wren, seren-memory-wren, seren-margin-wren ... was ten rows
+seren-loci-ada, seren-memory-ada, seren-margin-ada ... was ten rows
 wearing the instance name ten times. The card now folds one install's
 services under the instance, collapsed, each shown as the app it is, and
 leaves anything without an instance suffix (llama, kokoro, searxng, a bare
@@ -27,10 +27,10 @@ def _js_regex() -> re.Pattern[str]:
 
 def test_the_regex_splits_an_instance_suffix_and_leaves_the_rest_alone():
     rx = _js_regex()
-    assert rx.match("seren-loci-wren").groups() == ("loci", "wren")
-    assert rx.match("seren-corpus-callosum-wren").groups() == ("corpus-callosum", "wren")
-    assert rx.match("SerenObservatory-wren").groups() == ("Observatory", "wren")
-    assert rx.match("seren-symposium-wren").groups() == ("symposium", "wren")
+    assert rx.match("seren-loci-ada").groups() == ("loci", "ada")
+    assert rx.match("seren-corpus-callosum-ada").groups() == ("corpus-callosum", "ada")
+    assert rx.match("SerenObservatory-ada").groups() == ("Observatory", "ada")
+    assert rx.match("seren-symposium-ada").groups() == ("symposium", "ada")
     for flat in ("llama", "kokoro", "searxng", "seren-theatre", "comfy", "whisper"):
         assert rx.match(flat) is None, flat
 

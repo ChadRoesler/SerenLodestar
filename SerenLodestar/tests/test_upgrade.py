@@ -37,8 +37,8 @@ from seren_lodestar.config import LodestarConfig
 from seren_lodestar.dtos import NodeSnapshot
 from seren_lodestar.upgrade import PinError, UpgradeService, pins, rank, short_name, wanted
 
-NUC = ["seren-observatory-wren", "seren-lodestar-wren", "seren-corpus-callosum-wren", "seren-loci-wren",
-       "seren-memory-wren", "seren-workbench-wren", "searxng"]
+NUC = ["seren-observatory-ada", "seren-lodestar-ada", "seren-corpus-callosum-ada", "seren-loci-ada",
+       "seren-memory-ada", "seren-workbench-ada", "searxng"]
 
 
 class FakeAgent:
@@ -68,7 +68,7 @@ class FakeAgent:
             return 409, {"ok": False, "upgradable": False, "error": "no install record"}
         jid = f"job-{len(self.started)}"
         end = self.ends.get(svc, "done")
-        why = {"held": "seren-corpus-callosum 5.1.0 needs seren-memory>=5.2; seren-memory-wren is 5.0.0"}
+        why = {"held": "seren-corpus-callosum 5.1.0 needs seren-memory>=5.2; seren-memory-ada is 5.0.0"}
         self.jobs[jid] = {"id": jid, "service": svc, "state": end, "terminal": True,
                           "before": {svc: "5.0.0"}, "after": {svc: "5.0.1"},
                           **({"error": why.get(end, "it did not come back healthy")} if end != "done" else {})}
@@ -138,21 +138,21 @@ async def _until_done(svc):
 
 
 def test_names_and_order():
-    assert short_name("seren-corpus-callosum-wren") == "corpuscallosum"
-    assert short_name("SerenCorpusCallosum-wren") == "corpuscallosum"
+    assert short_name("seren-corpus-callosum-ada") == "corpuscallosum"
+    assert short_name("SerenCorpusCallosum-ada") == "corpuscallosum"
     assert short_name("llama") is None and short_name("searxng") is None
     by = sorted(NUC[:-1], key=rank)
-    assert by == ["seren-memory-wren", "seren-loci-wren", "seren-corpus-callosum-wren", "seren-workbench-wren",
-                  "seren-observatory-wren", "seren-lodestar-wren"]
-    assert wanted("seren-corpus-callosum-wren", ["corpus-callosum"]) and not wanted("seren-loci-wren", ["memory"])
-    assert wanted("seren-memory-wren", ["seren-memory-wren"]) and not wanted("llama", None)
+    assert by == ["seren-memory-ada", "seren-loci-ada", "seren-corpus-callosum-ada", "seren-workbench-ada",
+                  "seren-observatory-ada", "seren-lodestar-ada"]
+    assert wanted("seren-corpus-callosum-ada", ["corpus-callosum"]) and not wanted("seren-loci-ada", ["memory"])
+    assert wanted("seren-memory-ada", ["seren-memory-ada"]) and not wanted("llama", None)
 
 
 def test_pins_name_their_app():
-    order = [("nuc", "seren-memory-wren"), ("nuc", "seren-corpus-callosum-wren")]
-    assert pins(order, None, None) == {"nuc/seren-memory-wren": None, "nuc/seren-corpus-callosum-wren": None}
-    assert pins(order, None, {"memory": "5.2.0"})["nuc/seren-memory-wren"] == "5.2.0"
-    assert pins(order[:1], "5.2.0", None) == {"nuc/seren-memory-wren": "5.2.0"}
+    order = [("nuc", "seren-memory-ada"), ("nuc", "seren-corpus-callosum-ada")]
+    assert pins(order, None, None) == {"nuc/seren-memory-ada": None, "nuc/seren-corpus-callosum-ada": None}
+    assert pins(order, None, {"memory": "5.2.0"})["nuc/seren-memory-ada"] == "5.2.0"
+    assert pins(order[:1], "5.2.0", None) == {"nuc/seren-memory-ada": "5.2.0"}
     for bad in ((order, "5.2.0", None), (order, None, {"loci": "5.2.0"})):
         try:
             pins(*bad)
@@ -175,31 +175,31 @@ def test_a_run_backs_up_then_upgrades_in_order_and_lodestar_goes_last(tmp_path):
     assert run["state"] == "done", run
     order = [(s["node"], s["service"]) for s in run["steps"]]
     assert order == [("nano", "seren-observatory-nano"),
-                     ("nuc", "seren-memory-wren"), ("nuc", "seren-loci-wren"), ("nuc", "seren-corpus-callosum-wren"),
-                     ("nuc", "seren-workbench-wren"), ("nuc", "seren-observatory-wren"),
-                     ("nuc", "seren-lodestar-wren")], "no llama, no searxng, the Observatory last, Lodestar last of all"
+                     ("nuc", "seren-memory-ada"), ("nuc", "seren-loci-ada"), ("nuc", "seren-corpus-callosum-ada"),
+                     ("nuc", "seren-workbench-ada"), ("nuc", "seren-observatory-ada"),
+                     ("nuc", "seren-lodestar-ada")], "no llama, no searxng, the Observatory last, Lodestar last of all"
     assert backup.pulls == order, "a copy off the box before each one"
     assert all(b["snapshot"] is False and b["version"] is None for _s, b in nuc.started), "each to its newest"
-    callosum = dict(nuc.started)["seren-corpus-callosum-wren"]["peers"]
-    assert {"service": "seren-memory-wren", "node": "nuc", "package": "seren-memory", "version": "5.0.1"} \
+    callosum = dict(nuc.started)["seren-corpus-callosum-ada"]["peers"]
+    assert {"service": "seren-memory-ada", "node": "nuc", "package": "seren-memory", "version": "5.0.1"} \
         in callosum, "the peers are what the cluster runs by then: Memory already moved"
     assert all(s["state"] == "done" and s["after"] for s in run["steps"])
 
 
 def test_one_failure_does_not_hold_the_others_back(tmp_path):
-    svc, nuc, nano = _world(tmp_path, nuc=FakeAgent(ends={"seren-loci-wren": "rolled_back",
-                                                          "seren-corpus-callosum-wren": "held"}))
+    svc, nuc, nano = _world(tmp_path, nuc=FakeAgent(ends={"seren-loci-ada": "rolled_back",
+                                                          "seren-corpus-callosum-ada": "held"}))
 
     async def go():
         _s, out = svc.start(nodes=["nuc"])
         await _until_done(svc)
         return svc.load(out["run"]["id"])
     run = asyncio.run(go())
-    assert run["state"] == "partial" and run["failed"] == ["nuc/seren-loci-wren: rolled_back - it did not "
+    assert run["state"] == "partial" and run["failed"] == ["nuc/seren-loci-ada: rolled_back - it did not "
                                                            "come back healthy"]
     states = {s["service"]: s["state"] for s in run["steps"]}
-    assert states == {"seren-memory-wren": "done", "seren-loci-wren": "failed", "seren-corpus-callosum-wren": "held",
-                      "seren-workbench-wren": "done", "seren-observatory-wren": "done", "seren-lodestar-wren": "done"}
+    assert states == {"seren-memory-ada": "done", "seren-loci-ada": "failed", "seren-corpus-callosum-ada": "held",
+                      "seren-workbench-ada": "done", "seren-observatory-ada": "done", "seren-lodestar-ada": "done"}
     assert "needs seren-memory>=5.2" in run["held"][0], "held is said, and is not a failure"
     assert nano.started == [], "--nodes nuc"
 
@@ -214,13 +214,13 @@ def test_what_is_on_its_newest_is_left_alone_and_a_pin_always_goes(tmp_path):
         return svc.load(out["run"]["id"])
     run = asyncio.run(go())
     states = {s["service"]: s["state"] for s in run["steps"]}
-    assert states == {"seren-memory-wren": "done", "seren-loci-wren": "current", "seren-workbench-wren": "done"}
-    assert run["state"] == "done" and ("nuc", "seren-loci-wren") not in backup.pulls, "current: not even a backup"
-    assert dict(nuc.started)["seren-memory-wren"]["version"] == "4.9.0", "pinned: installed, newest or not"
+    assert states == {"seren-memory-ada": "done", "seren-loci-ada": "current", "seren-workbench-ada": "done"}
+    assert run["state"] == "done" and ("nuc", "seren-loci-ada") not in backup.pulls, "current: not even a backup"
+    assert dict(nuc.started)["seren-memory-ada"]["version"] == "4.9.0", "pinned: installed, newest or not"
 
 
 def test_no_copy_off_the_box_no_upgrade(tmp_path):
-    svc, nuc, nano = _world(tmp_path, backup=FakeBackup(fails={"seren-loci-wren"}))
+    svc, nuc, nano = _world(tmp_path, backup=FakeBackup(fails={"seren-loci-ada"}))
 
     async def go():
         _s, out = svc.start(services=["memory", "loci", "workbench"])
@@ -228,7 +228,7 @@ def test_no_copy_off_the_box_no_upgrade(tmp_path):
         return svc.load(out["run"]["id"])
     run = asyncio.run(go())
     assert run["state"] == "partial" and "the backup failed" in run["error"]
-    assert [s for s, _b in nuc.started] == ["seren-memory-wren", "seren-workbench-wren"], "loci never touched"
+    assert [s for s, _b in nuc.started] == ["seren-memory-ada", "seren-workbench-ada"], "loci never touched"
 
 
 def test_without_backups_the_observatory_takes_its_own_snapshot(tmp_path):
@@ -261,7 +261,7 @@ def test_lodestar_hands_its_own_upgrade_off_and_the_next_one_closes_the_run(tmp_
     run = svc.load(rid)
     assert run["state"] == "handed_off" and run["finished_at"] is None
     step = run["steps"][-1]
-    assert step["service"] == "seren-lodestar-wren" and step["state"] == "handed_off" and step["job"] == "job-2"
+    assert step["service"] == "seren-lodestar-ada" and step["state"] == "handed_off" and step["job"] == "job-2"
 
     nuc.silent.clear()                                  # the new Lodestar is up
     again, _n, _m = _world(tmp_path, nuc=nuc)
@@ -274,11 +274,11 @@ def test_the_dry_run_is_every_plan_and_starts_nothing(tmp_path):
     svc, nuc, nano = _world(tmp_path, newest={"seren-loci": "5.0.0"})
     assert asyncio.run(svc.plan(version="5.0.1"))["ok"] is False, "one version, many apps"
     out = asyncio.run(svc.plan())
-    assert out["ok"] and out["dry_run"] and out["order"][-1] == "nuc/seren-lodestar-wren"
-    assert out["nodes"]["nuc"]["seren-memory-wren"]["before"] == {"seren-memory-wren": "5.0.0"}
-    assert out["current"] == ["nuc/seren-loci-wren"]
-    callosum = dict(nuc.planned)["seren-corpus-callosum-wren"]["peers"]
-    assert {"service": "seren-memory-wren", "node": "nuc", "package": "seren-memory", "version": "5.1.0"} \
+    assert out["ok"] and out["dry_run"] and out["order"][-1] == "nuc/seren-lodestar-ada"
+    assert out["nodes"]["nuc"]["seren-memory-ada"]["before"] == {"seren-memory-ada": "5.0.0"}
+    assert out["current"] == ["nuc/seren-loci-ada"]
+    callosum = dict(nuc.planned)["seren-corpus-callosum-ada"]["peers"]
+    assert {"service": "seren-memory-ada", "node": "nuc", "package": "seren-memory", "version": "5.1.0"} \
         in callosum, "each plan sees what the ones before it would bring"
     assert nuc.started == [] and nano.started == []
 
@@ -288,10 +288,10 @@ def test_behind_is_every_service_against_the_index(tmp_path):
     out = asyncio.run(svc.behind(services=["memory", "loci", "observatory"]))
     rows = {(r["node"], r["service"]): (r["version"], r["latest"], r["behind"]) for r in out["services"]}
     assert rows == {("nano", "seren-observatory-nano"): ("5.0.0", "5.0.1", True),
-                    ("nuc", "seren-memory-wren"): ("5.0.0", "5.2.0", True),
-                    ("nuc", "seren-loci-wren"): ("5.0.0", "5.0.0", False),
-                    ("nuc", "seren-observatory-wren"): ("5.0.0", "5.0.1", True)}
-    assert "nuc/seren-memory-wren 5.0.0 -> 5.2.0" in out["behind"] and out["unknown_nodes"] == []
+                    ("nuc", "seren-memory-ada"): ("5.0.0", "5.2.0", True),
+                    ("nuc", "seren-loci-ada"): ("5.0.0", "5.0.0", False),
+                    ("nuc", "seren-observatory-ada"): ("5.0.0", "5.0.1", True)}
+    assert "nuc/seren-memory-ada 5.0.0 -> 5.2.0" in out["behind"] and out["unknown_nodes"] == []
 
 
 def test_behind_carries_the_libraries_each_venv_runs_against_the_index(tmp_path):
@@ -305,7 +305,7 @@ def test_behind_carries_the_libraries_each_venv_runs_against_the_index(tmp_path)
     assert row["behind"] is False, "memory itself is on its newest"
     assert row["libs"] == {"seren-sinew": {"version": "5.0.0", "latest": "5.0.0", "behind": False},
                            "seren-meninges": {"version": "4.9.0", "latest": "5.0.0", "behind": True}}
-    assert out["behind"] == [] and out["libs_behind"] == ["nuc/seren-memory-wren seren-meninges 4.9.0 -> 5.0.0"]
+    assert out["behind"] == [] and out["libs_behind"] == ["nuc/seren-memory-ada seren-meninges 4.9.0 -> 5.0.0"]
 
 
 def test_a_library_alone_is_a_run_of_its_service_pinned_where_it_is(tmp_path):
@@ -322,7 +322,7 @@ def test_a_library_alone_is_a_run_of_its_service_pinned_where_it_is(tmp_path):
         return out
     out = asyncio.run(go())
     (started,) = nuc.started
-    assert started[0] == "seren-memory-wren"
+    assert started[0] == "seren-memory-ada"
     assert started[1]["version"] == "5.0.0" and started[1]["with"] == ["seren-meninges"]
     assert svc.load(out["run"]["id"])["steps"][0]["state"] == "done"
 
@@ -345,18 +345,18 @@ def test_with_libs_a_current_service_with_a_stale_library_moves_just_the_library
 
     run, nuc = run_with(False)
     assert {s["service"]: s["state"] for s in run["steps"]} == {
-        "seren-memory-wren": "current", "seren-loci-wren": "current", "seren-workbench-wren": "done"}
-    assert "with" not in dict(nuc.started)["seren-workbench-wren"], "behind: the Observatory's own default"
+        "seren-memory-ada": "current", "seren-loci-ada": "current", "seren-workbench-ada": "done"}
+    assert "with" not in dict(nuc.started)["seren-workbench-ada"], "behind: the Observatory's own default"
 
     run, nuc = run_with(True)
     assert run["libs"] is True and all(s["state"] == "done" for s in run["steps"]), run
     started = dict(nuc.started)
-    for svc in ("seren-memory-wren", "seren-loci-wren"):
+    for svc in ("seren-memory-ada", "seren-loci-ada"):
         assert started[svc]["version"] == "5.0.0" and started[svc]["with"] == ["seren-meninges"], \
             "pinned where it is, and only the library that is behind (sinew is on its newest)"
-    step = next(s for s in run["steps"] if s["service"] == "seren-memory-wren")
+    step = next(s for s in run["steps"] if s["service"] == "seren-memory-ada")
     assert step["libs"] == ["seren-meninges"] and step["version"] == "5.0.0"
-    wb = started["seren-workbench-wren"]
+    wb = started["seren-workbench-ada"]
     assert wb["version"] is None and "with" not in wb, "a service that is behind moves its libraries anyway"
 
 
@@ -364,22 +364,22 @@ def test_with_libs_the_plan_says_which_lines_are_libraries_only(tmp_path):
     svc, nuc, nano = _world(tmp_path, newest={"seren-memory": "5.0.0", "seren-sinew": "5.0.0",
                                               "seren-meninges": "5.0.0"})
     off = asyncio.run(svc.plan(nodes=["nuc"], services=["memory"]))
-    assert off["current"] == ["nuc/seren-memory-wren"] and off["libs_only"] == {} and nuc.planned == []
-    assert off["libs_behind"] == {"nuc/seren-memory-wren": {"seren-meninges": {
+    assert off["current"] == ["nuc/seren-memory-ada"] and off["libs_only"] == {} and nuc.planned == []
+    assert off["libs_behind"] == {"nuc/seren-memory-ada": {"seren-meninges": {
         "version": "4.9.0", "latest": "5.0.0", "moves": False}}}, "the plan says what it leaves"
     on = asyncio.run(svc.plan(nodes=["nuc"], services=["memory"], libs=True))
     assert on["libs"] is True and on["current"] == []
-    assert on["libs_only"] == {"nuc/seren-memory-wren": ["seren-meninges"]}
-    assert on["libs_behind"]["nuc/seren-memory-wren"]["seren-meninges"]["moves"] is True
+    assert on["libs_only"] == {"nuc/seren-memory-ada": ["seren-meninges"]}
+    assert on["libs_behind"]["nuc/seren-memory-ada"]["seren-meninges"]["moves"] is True
     (planned,) = nuc.planned
     assert planned[1]["version"] == "5.0.0" and planned[1]["with"] == ["seren-meninges"]
     assert nuc.started == []
     # a service that is behind takes its libraries along, box or no box
     behind = asyncio.run(svc.plan(nodes=["nuc"], services=["loci"]))
-    assert behind["libs_behind"]["nuc/seren-loci-wren"]["seren-meninges"]["moves"] is True
+    assert behind["libs_behind"]["nuc/seren-loci-ada"]["seren-meninges"]["moves"] is True
     # unless the run names its own `with` without them
     alone = asyncio.run(svc.plan(nodes=["nuc"], services=["loci"], with_=[]))
-    assert alone["libs_behind"]["nuc/seren-loci-wren"]["seren-meninges"]["moves"] is False
+    assert alone["libs_behind"]["nuc/seren-loci-ada"]["seren-meninges"]["moves"] is False
 
 
 def test_the_routes_and_the_tools(tmp_path):
@@ -390,12 +390,12 @@ def test_the_routes_and_the_tools(tmp_path):
         svc, nuc, nano = _world(tmp_path)
         c.app.state.upgrades = svc
         p = c.post("/api/v1/upgrade", json={"dry_run": True, "services": "memory"}).json()
-        assert p["order"] == ["nuc/seren-memory-wren"]
+        assert p["order"] == ["nuc/seren-memory-ada"]
         lp = c.post("/api/v1/upgrade", json={"dry_run": True, "services": "memory", "libs": True}).json()
         assert lp["libs"] is True and "libs_only" in lp
         assert c.post("/api/v1/upgrade", json={"services": ["memory", "loci"], "version": "5.0.1"}).status_code == 400
         assert c.post("/api/v1/upgrade", json={"dry_run": True, "version": "5.0.1"}).status_code == 400
-        assert c.get("/api/v1/upgrade/behind?services=memory").json()["behind"] == ["nuc/seren-memory-wren 5.0.0 -> 5.0.1"]
+        assert c.get("/api/v1/upgrade/behind?services=memory").json()["behind"] == ["nuc/seren-memory-ada 5.0.0 -> 5.0.1"]
         r = c.post("/api/v1/upgrade", json={"services": ["memory"], "version": "5.0.1"})
         assert r.status_code == 202
         rid = r.json()["run"]["id"]
@@ -407,7 +407,7 @@ def test_the_routes_and_the_tools(tmp_path):
         # One step with the job behind it, from the node (20 Oct 2026: the
         # viewer's run modal reads the job's notes as the log of a failure).
         st = c.get(f"/api/v1/upgrade/{rid}/step/0").json()
-        assert st["ok"] and st["step"]["service"] == "seren-memory-wren" and st["note"] is None
+        assert st["ok"] and st["step"]["service"] == "seren-memory-ada" and st["note"] is None
         assert st["job"]["id"] == st["step"]["job"] and st["job"]["state"] == "done"
         assert c.get(f"/api/v1/upgrade/{rid}/step/9").status_code == 404
         assert c.get("/api/v1/upgrade/nope/step/0").status_code == 404

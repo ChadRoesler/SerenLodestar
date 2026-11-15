@@ -33,7 +33,7 @@ def road(tmp_path, monkeypatch):
     (home / ".seren" / "services" / "speaker.json").write_text(json.dumps({
         "schema_version": 1, "service": "speaker", "service_type": "pid_file", "port": 8087, "health_path": "/health",
         "endpoint": "/speak", "serviceSpecific": {"model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"}}))
-    # the big voice behind the wren-drama card: its own service on the same box
+    # the big voice behind the ada-drama card: its own service on the same box
     (home / ".seren" / "services" / "fishspeech.json").write_text(json.dumps({
         "schema_version": 1, "service": "fishspeech", "service_type": "pid_file", "port": 8088,
         "health_path": "/v1/health", "endpoint": "/v1/tts", "serviceSpecific": {"model": "fishaudio/drama-3"}}))
@@ -57,11 +57,11 @@ def road(tmp_path, monkeypatch):
         box["asked"].append({"url": str(request.url), "body": request.read(), "up": sorted(box["up"])})
         if request.url.path == "/voices":
             return httpx.Response(200, json={"voices": [
-                {"name": "wren", "backend": "qwen3tts", "language": "English", "ref_seconds": 19.7},
-                {"name": "wren-drama", "backend": "fish", "language": "English", "ref_seconds": 19.7, "needs": "fishspeech"}]})
+                {"name": "ada", "backend": "qwen3tts", "language": "English", "ref_seconds": 19.7},
+                {"name": "ada-drama", "backend": "fish", "language": "English", "ref_seconds": 19.7, "needs": "fishspeech"}]})
         if box["refuse"]:
-            return httpx.Response(box["refuse"], json={"detail": "no voice 'bob'; I have ['wren']"})
-        return httpx.Response(200, content=WAV, headers={"content-type": "audio/wav", "X-Seren-Voice": "wren",
+            return httpx.Response(box["refuse"], json={"detail": "no voice 'bob'; I have ['ada']"})
+        return httpx.Response(200, content=WAV, headers={"content-type": "audio/wav", "X-Seren-Voice": "ada",
                                                          "X-Seren-Backend": "qwen3tts", "X-Seren-Seconds": "4.1",
                                                          "X-Seren-Clip-Seconds": "4.9", "X-Seren-Chunks": "1"})
 
@@ -90,25 +90,25 @@ def test_words_wake_the_speaker_and_come_back_as_a_wav_with_the_node_on_it(road)
     r = c.post("/api/v1/speak", json={"text": "Hi, it's me.", "holder": "symposium"})
     assert r.status_code == 200, r.text
     assert r.content == WAV and r.headers["content-type"].startswith("audio/wav")
-    assert r.headers["x-seren-node"] == "bigbox" and r.headers["x-seren-voice"] == "wren"
+    assert r.headers["x-seren-node"] == "bigbox" and r.headers["x-seren-voice"] == "ada"
     assert r.headers["x-seren-clip-seconds"] == "4.9" and r.headers["x-seren-model"] == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
     voices, asked = box["asked"]
     assert voices["url"] == "http://127.0.0.1:8087/voices", "the card is looked up first: does it need anything?"
     assert asked["up"] == ["speaker"] and asked["url"] == "http://127.0.0.1:8087/speak"
-    assert json.loads(asked["body"]) == {"text": "Hi, it's me.", "voice": "wren"}
-    assert box["started"] == ["speaker"], "the wren card needs nothing beside the speaker"
+    assert json.loads(asked["body"]) == {"text": "Hi, it's me.", "voice": "ada"}
+    assert box["started"] == ["speaker"], "no voice was asked for: the first card listed, which needs nothing more"
     assert "x-seren-needs" not in r.headers
 
 
 def test_a_card_that_needs_another_service_wakes_it_beside_the_speaker_and_lets_both_go(road):
     c, box = road
-    r = c.post("/api/v1/speak", json={"text": "This one laughs.", "voice": "wren-drama", "holder": "symposium"})
+    r = c.post("/api/v1/speak", json={"text": "This one laughs.", "voice": "ada-drama", "holder": "symposium"})
     assert r.status_code == 200, r.text
     assert r.headers["x-seren-needs"] == "fishspeech" and r.headers["x-seren-node"] == "bigbox"
     assert box["started"] == ["speaker", "fishspeech"], "the speaker first (to ask it), then what the card needs"
     voices, asked = box["asked"]
     assert asked["up"] == ["fishspeech", "speaker"], "both were up when the words went in"
-    assert json.loads(asked["body"]) == {"text": "This one laughs.", "voice": "wren-drama"}
+    assert json.loads(asked["body"]) == {"text": "This one laughs.", "voice": "ada-drama"}
     # both leases are let go: the steward's book has no holder on either
     book = c.app.state.steward.leases
     assert book.node_of("fishspeech", "symposium") is None and book.node_of("speaker", "symposium") is None
@@ -118,7 +118,7 @@ def test_a_card_that_needs_another_service_wakes_it_beside_the_speaker_and_lets_
 def test_the_voices_are_listed_through_the_same_door(road):
     c, box = road
     r = c.get("/api/v1/speak/voices")
-    assert r.status_code == 200 and r.json()["voices"][0]["name"] == "wren" and r.json()["node"] == "bigbox"
+    assert r.status_code == 200 and r.json()["voices"][0]["name"] == "ada" and r.json()["node"] == "bigbox"
 
 
 def test_a_refusal_down_the_road_is_a_502_with_the_why(road):

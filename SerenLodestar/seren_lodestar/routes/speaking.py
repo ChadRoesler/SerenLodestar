@@ -1,7 +1,10 @@
 """
 Speaking - words said in a voice, through the cluster.
 
-    POST /api/v1/speak            JSON {text, voice?="wren", holder?, node?}
+    POST /api/v1/speak            JSON {text, voice?, holder?, node?}
+                                  voice: one of the speaker's cards; with none,
+                                  the first it lists. No voice is named here:
+                                  whose it is belongs to whoever set it up.
                                   -> audio/wav, with X-Seren-Node, X-Seren-Voice,
                                      X-Seren-Backend, X-Seren-Model, X-Seren-Seconds
                                      (to make it), X-Seren-Clip-Seconds
@@ -17,9 +20,9 @@ the caller's name), asked through the node's Observatory, let go after;
 its run policy decides when it sleeps. Kokoro stays the voice for a node
 that has no speaker, and callers fall back to it on a 503.
 
-A voice card may say it NEEDS another service on the same box (the
-speaker's `wren-drama` card runs on Fish Audio Drama 3, 41 GB behind its
-own server, `fishspeech`, which the speaker only talks to). Then that
+A voice card may say it NEEDS another service on the same box (a card
+that runs on Fish Audio Drama 3, 41 GB behind its own server,
+`fishspeech`, which the speaker only talks to). Then that
 service is woken beside the speaker, in the same holder's name, with the
 longer wake a big model takes, and let go with it. The speaker's voice
 list says which cards need what (18 Oct 2026).
@@ -44,7 +47,7 @@ router = APIRouter(tags=["speaking"])
 
 class SpeakBody(BaseModel):
     text: str
-    voice: str = "wren"
+    voice: str = ""
     holder: str = ""
     node: str = ""
 
@@ -67,17 +70,21 @@ async def _wake(request: Request, holder: str, node: str):
     return agent, holder, None
 
 
-async def _needs(agent, voice: str) -> str:
-    """The service the voice card `voice` needs beside the speaker, or "".
-    From the speaker's own voice list; a speaker that cannot be asked, or a
-    voice it does not list, needs nothing extra (the speak will say why)."""
+async def _card(agent, voice: str) -> tuple[str, str]:
+    """(the voice to ask for, the service its card needs beside the speaker
+    or ""). From the speaker's own voice list. No voice asked for is the
+    first card listed. A speaker that cannot be asked, or a voice it does
+    not list, needs nothing extra (the speak will say why)."""
     status, out = await agent.relay_json_async("api/v1/service/speaker/voices", timeout=30.0)
     if status != 200 or not isinstance(out, dict):
-        return ""
-    for card in out.get("voices") or []:
-        if isinstance(card, dict) and card.get("name") == voice:
-            return str(card.get("needs") or "")
-    return ""
+        return voice, ""
+    cards = [c for c in out.get("voices") or [] if isinstance(c, dict) and c.get("name")]
+    if not voice and cards:
+        voice = str(cards[0]["name"])[:64]
+    for card in cards:
+        if card.get("name") == voice:
+            return voice, str(card.get("needs") or "")
+    return voice, ""
 
 
 async def _wake_needed(request: Request, holder: str, agent, needed: str):
@@ -103,13 +110,13 @@ async def speak(request: Request, body: SpeakBody):
         return JSONResponse({"error": "send `text` to say"}, status_code=400)
     if len(text) > MAX_TEXT_CHARS:
         return JSONResponse({"error": f"that is {len(text)} characters; at most {MAX_TEXT_CHARS} in one go"}, status_code=413)
-    voice = (body.voice or "wren").strip()[:64]
+    voice = (body.voice or "").strip()[:64]
     agent, holder, err = await _wake(request, body.holder, body.node)
     if err:
         return err
     needed = ""
     try:
-        needed = await _needs(agent, voice)
+        voice, needed = await _card(agent, voice)
         if needed:
             err = await _wake_needed(request, holder, agent, needed)
             if err:

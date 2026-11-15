@@ -2,9 +2,8 @@
 The Transit (punch list transit, 28 Oct 2026): two bodies on one box, one
 GPU. Lodestar decides, the Observatory executes, the hippocampus only asks.
 
-Chad's chart: the hippocampus wakes and asks for its llama; another llama
-holds the box; scale that one down for the drafting; nobody is asked. Pinned
-here:
+The hippocampus wakes and asks for its llama; another llama holds the box; 
+scale that one down for the drafting; nobody is asked. Pinned here:
 
 - an ensure of a service whose policy `displaces` a running sibling stops the
   sibling through the node's Observatory first, holds it out of routing, and

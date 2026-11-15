@@ -76,6 +76,20 @@ def test_a_change_is_carried_to_its_node_and_the_carabiners_answer_comes_back(mo
     c.__exit__(None, None, None)
 
 
+def test_a_setting_added_on_the_box_and_one_taken_away_are_carried_as_they_are(monkeypatch):
+    """13 Nov 2026: the Rack's sheet can add a setting to a carabiner that
+    offers it (a field of kind "add") and take one away. To Lodestar both are
+    an ordinary change: a key it does not know, and `unset`."""
+    desk = FakeAgent()
+    c = _client(monkeypatch, {"desktop": desk})
+    r = c.post("/api/v1/carabiner/claude/settings",
+               json={"node": "desktop", "values": {"custom.talk_model": "claude-haiku-5-5"}, "unset": ["custom.old_one"]})
+    assert r.status_code == 200 and r.json()["applied"] == ["custom.talk_model"]
+    body = desk.seen[-1][2]
+    assert body["values"] == {"custom.talk_model": "claude-haiku-5-5"} and body["unset"] == ["custom.old_one"]
+    c.__exit__(None, None, None)
+
+
 def test_a_change_must_name_a_node_this_cluster_has(monkeypatch):
     c = _client(monkeypatch, {"desktop": FakeAgent()})
     assert c.post("/api/v1/carabiner/claude/settings", json={"values": {}}).status_code == 400

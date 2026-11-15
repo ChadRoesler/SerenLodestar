@@ -57,7 +57,7 @@ def test_an_offline_node_is_answered_from_the_snapshot_without_a_live_read(tmp_p
     with TestClient(create_app(cfg)) as c:
         agent = SlowAgent()
         c.app.state.cluster = FakeCluster({"desktop": agent}, {
-            "desktop": NodeSnapshot(online=False, installed_services=["SerenObservatory-wren"], status={},
+            "desktop": NodeSnapshot(online=False, installed_services=["SerenObservatory-ada"], status={},
                                     last_error="discovery timed out after 2.0s")})
         t0 = time.monotonic()
         body = c.get("/api/v1/system/status").json()
@@ -65,7 +65,7 @@ def test_an_offline_node_is_answered_from_the_snapshot_without_a_live_read(tmp_p
         assert agent.asked == 0
         node = body["nodes"][0]
         assert node["online"] is False and node["last_error"] == "discovery timed out after 2.0s"
-        assert node["installed_services"] == ["SerenObservatory-wren"] and node["services_detail"] is None
+        assert node["installed_services"] == ["SerenObservatory-ada"] and node["services_detail"] is None
 
 
 async def test_the_status_reads_carry_the_short_timeout(monkeypatch):

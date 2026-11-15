@@ -159,13 +159,12 @@ class Steward:
         Returns why it could not, or None when the way is clear (or there
         was nothing in it).
 
-        Chad's chart, 28 Oct 2026: the hippocampus wakes, asks for its llama;
-        another llama holds the box; scale that one down for the drafting.
-        The displaced service is held out of routing meanwhile (the cluster's
-        hold), so a request for it goes to a fallback instead of queueing
-        behind a brief. Nothing is restored after: the transit ends when the
-        displacing service has no holder (the next check), and an on_demand
-        sibling comes back on the next ask for it.
+        The hippocampus wakes, asks for its llama; another llama holds the box; 
+        scale that one down for the drafting. The displaced service is held out 
+        of routing meanwhile (the cluster's hold), so a request for it goes to 
+        a fallback instead of queueing behind a brief. Nothing is restored after: 
+        the transit ends when the displacing service has no holder (the next 
+        check), and an on_demand sibling comes back on the next ask for it.
         """
         pol = self.policy(service)
         if not pol.displaces:

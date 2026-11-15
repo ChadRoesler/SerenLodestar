@@ -40,7 +40,7 @@ class FakeAgent:
 
     async def get_service_stores_async(self, svc):
         k = self.keepers.get(svc)
-        if svc == "SerenCorpusCallosum-wren":
+        if svc == "SerenCorpusCallosum-ada":
             return {"ok": True, "stores": ["memory", "loci"]}      # the Callosum's /stores means what it federates
         return {"ok": True, **k.describe()} if k else None
 
@@ -82,7 +82,7 @@ class FakeCluster:
         self.nodes = nodes
 
     def get_snapshots(self):
-        return {n: NodeSnapshot(online=on, installed_services=sorted(a.keepers) + ["SerenProbe-wren", "SerenCorpusCallosum-wren"], status={})
+        return {n: NodeSnapshot(online=on, installed_services=sorted(a.keepers) + ["SerenProbe-ada", "SerenCorpusCallosum-ada"], status={})
                 for n, (on, a) in self.nodes.items()}
 
     def get_agent(self, n):
@@ -98,7 +98,7 @@ def _keeper(tmp_path: Path, service: str, text: str) -> StoreKeeper:
 def _world(tmp_path):
     mem = _keeper(tmp_path, "seren-memory", "the memories")
     loci = _keeper(tmp_path, "seren-loci", "the facts")
-    agent = FakeAgent({"SerenMemory-wren": mem, "SerenLoci-wren": loci})
+    agent = FakeAgent({"SerenMemory-ada": mem, "SerenLoci-ada": loci})
     cluster = FakeCluster({"desktop": (True, agent), "nano": (False, FakeAgent({}))})
     svc = BackupService(BackupConfig(every_hours=24, max_per_pull=2, keep_daily=2, keep_weekly=0),
                         cluster, tmp_path / "stash")
@@ -109,19 +109,19 @@ def test_a_pull_asks_fetches_verifies_and_stashes(tmp_path):
     svc, agent, mem, loci = _world(tmp_path)
     rep = asyncio.run(svc.pull("first"))
     assert rep.pulled == 2 and rep.errors == [] and rep.skipped_offline == ["nano"]
-    assert agent.taken == [("SerenLoci-wren", "Lodestar pull (first)"), ("SerenMemory-wren", "Lodestar pull (first)")]
+    assert agent.taken == [("SerenLoci-ada", "Lodestar pull (first)"), ("SerenMemory-ada", "Lodestar pull (first)")]
     d = rep.nodes["desktop"]
-    assert d["SerenProbe-wren"] == {"skipped": "keeps no snapshots"}
-    assert d["SerenCorpusCallosum-wren"] == {"skipped": "keeps no snapshots"}, "a /stores that means something else"
-    assert len(d["SerenMemory-wren"]["stashed"]) == 1 and d["SerenMemory-wren"]["took_fresh"] is True
-    sid = d["SerenMemory-wren"]["stashed"][0]
-    stashed = tmp_path / "stash" / "desktop" / "SerenMemory-wren" / sid
+    assert d["SerenProbe-ada"] == {"skipped": "keeps no snapshots"}
+    assert d["SerenCorpusCallosum-ada"] == {"skipped": "keeps no snapshots"}, "a /stores that means something else"
+    assert len(d["SerenMemory-ada"]["stashed"]) == 1 and d["SerenMemory-ada"]["took_fresh"] is True
+    sid = d["SerenMemory-ada"]["stashed"][0]
+    stashed = tmp_path / "stash" / "desktop" / "SerenMemory-ada" / sid
     assert verify_snapshot(stashed) == [] and (stashed / "raw" / "it" / "seren-memory.json").read_text() == "the memories"
     assert json.loads((stashed / "manifest.json").read_text())["reason"] == "Lodestar pull (first)"
     # the same pull again: nothing new, nothing re-fetched
     rep2 = asyncio.run(svc.pull("again", take_fresh=False))
-    assert rep2.pulled == 0 and rep2.nodes["desktop"]["SerenMemory-wren"]["already_had"] == 1
-    assert svc.describe()["nodes"]["desktop"]["SerenMemory-wren"]["count"] == 1
+    assert rep2.pulled == 0 and rep2.nodes["desktop"]["SerenMemory-ada"]["already_had"] == 1
+    assert svc.describe()["nodes"]["desktop"]["SerenMemory-ada"]["count"] == 1
     assert svc.describe()["last_pull"]["reason"] == "again"
 
 
@@ -131,13 +131,13 @@ def test_the_next_pull_is_incremental_and_the_stash_shares_what_did_not_change(t
     import os
     svc, agent, mem, loci = _world(tmp_path)
     asyncio.run(svc.pull("first"))
-    first = svc.describe()["nodes"]["desktop"]["SerenMemory-wren"]["latest"]["id"]
+    first = svc.describe()["nodes"]["desktop"]["SerenMemory-ada"]["latest"]["id"]
     second = mem.snapshot("the next day", now=time.time() + 60)["id"]   # the file store did not change
     rep = asyncio.run(svc.pull("second", take_fresh=False))
-    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    got = rep.nodes["desktop"]["SerenMemory-ada"]
     assert rep.errors == [], rep.errors
     assert got["stashed"] == [second] and got["incremental"] == {second: first}, got
-    stash = tmp_path / "stash" / "desktop" / "SerenMemory-wren"
+    stash = tmp_path / "stash" / "desktop" / "SerenMemory-ada"
     assert verify_snapshot(stash / second) == []
     assert os.path.samefile(stash / first / "raw" / "it" / "seren-memory.json", stash / second / "raw" / "it" / "seren-memory.json")
     assert not list(stash.glob("*.incoming*")), "the streamed archive is gone once unpacked"
@@ -147,7 +147,7 @@ def test_the_next_pull_is_incremental_and_the_stash_shares_what_did_not_change(t
     shutil.rmtree(mem.snapshot_dir(second))
     third = mem.snapshot("later", now=time.time() + 120)["id"]     # its own stamp: ids are per second
     rep = asyncio.run(svc.pull("third", take_fresh=False))
-    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    got = rep.nodes["desktop"]["SerenMemory-ada"]
     assert got["stashed"] == [third] and got["incremental"] == {} and verify_snapshot(stash / third) == []
 
 
@@ -156,13 +156,13 @@ def test_only_what_is_missing_newest_first_and_the_retention(tmp_path):
     base = time.time() - 5 * 86400
     ids = [mem.snapshot(now=base + i * 86400)["id"] for i in range(5)]       # five old ones on the node
     rep = asyncio.run(svc.pull(take_fresh=False))
-    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    got = rep.nodes["desktop"]["SerenMemory-ada"]
     assert got["stashed"] == [ids[4], ids[3]], "newest first, max_per_pull"
     assert got["remote"] == 5 and got["already_had"] == 0
     rep = asyncio.run(svc.pull(take_fresh=False))
-    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    got = rep.nodes["desktop"]["SerenMemory-ada"]
     assert got["stashed"] == [ids[2], ids[1]] and got["pruned"], "the next two, and keep_daily=2 prunes the oldest"
-    kept = sorted(p.name for p in (tmp_path / "stash" / "desktop" / "SerenMemory-wren").iterdir())
+    kept = sorted(p.name for p in (tmp_path / "stash" / "desktop" / "SerenMemory-ada").iterdir())
     assert len(kept) == 2
 
 
@@ -172,10 +172,10 @@ def test_a_snapshot_that_does_not_verify_is_not_kept(tmp_path):
     bad = mem.snapshot()["id"]
     agent.forged.add(bad)
     rep = asyncio.run(svc.pull(take_fresh=False))
-    got = rep.nodes["desktop"]["SerenMemory-wren"]
+    got = rep.nodes["desktop"]["SerenMemory-ada"]
     assert got["failed"] == [bad] and got["stashed"] == [good]
     assert any("did not verify" in e for e in rep.errors)
-    assert sorted(p.name for p in (tmp_path / "stash" / "desktop" / "SerenMemory-wren").iterdir()) == [good], \
+    assert sorted(p.name for p in (tmp_path / "stash" / "desktop" / "SerenMemory-ada").iterdir()) == [good], \
         "no .partial left behind either"
 
 
@@ -210,8 +210,8 @@ def test_the_routes(tmp_path, monkeypatch):
         assert d["ok"] and d["dir"] == str((tmp_path / "stash").resolve()) and d["nodes"] == {}
         r = c.post("/api/v1/backup/pull", json={"reason": "from the route", "node": "desktop"})
         assert r.status_code == 200 and r.json()["ok"] and r.json()["pulled"] == 2
-        assert c.get("/api/v1/backup").json()["nodes"]["desktop"]["SerenLoci-wren"]["count"] == 1
-        for path in ("/api/v1/backup/restore", "/api/v1/backup/desktop/SerenLoci-wren"):
+        assert c.get("/api/v1/backup").json()["nodes"]["desktop"]["SerenLoci-ada"]["count"] == 1
+        for path in ("/api/v1/backup/restore", "/api/v1/backup/desktop/SerenLoci-ada"):
             assert c.post(path).status_code in (404, 405) and c.delete(path).status_code in (404, 405)
 
 
@@ -235,19 +235,19 @@ def test_a_rehearsal_proves_the_stash_on_the_node_it_came_from(tmp_path):
     asyncio.run(svc.pull("first"))
     rep = asyncio.run(svc.rehearse(reason="the first one"))
     assert rep["ok"] and rep["dry_run"] and (rep["rehearsed"], rep["passed"]) == (2, 2), rep
-    m = rep["nodes"]["desktop"]["SerenMemory-wren"]
+    m = rep["nodes"]["desktop"]["SerenMemory-ada"]
     assert m["ok"] and m["source"] == "sent" and m["stash_verified"] and m["check"] == {"read": "the memories"}
     assert m["live_store_touched"] is False and len(mem.list()) == 1, "nothing was restored, nothing was kept"
     assert svc.describe()["last_rehearsal"]["reason"] == "the first one"
     # one service, one snapshot; and a stash that rotted is caught here, before it is sent
     sid = m["snapshot"]
-    one = asyncio.run(svc.rehearse(node="desktop", service="SerenLoci-wren"))
+    one = asyncio.run(svc.rehearse(node="desktop", service="SerenLoci-ada"))
     assert one["rehearsed"] == 1 and one["ok"]
-    assert asyncio.run(svc.rehearse(service="SerenMemory-wren", snapshot_id="nope"))["ok"] is False
-    (tmp_path / "stash" / "desktop" / "SerenMemory-wren" / sid / "raw" / "it" / "seren-memory.json").write_text("rot")
-    bad = asyncio.run(svc.rehearse(service="SerenMemory-wren"))
+    assert asyncio.run(svc.rehearse(service="SerenMemory-ada", snapshot_id="nope"))["ok"] is False
+    (tmp_path / "stash" / "desktop" / "SerenMemory-ada" / sid / "raw" / "it" / "seren-memory.json").write_text("rot")
+    bad = asyncio.run(svc.rehearse(service="SerenMemory-ada"))
     assert bad["ok"] is False and "no longer matches its manifest" in bad["problems"][0]
-    assert bad["nodes"]["desktop"]["SerenMemory-wren"]["stash_verified"] is False
+    assert bad["nodes"]["desktop"]["SerenMemory-ada"]["stash_verified"] is False
 
 
 def test_the_rehearse_route(tmp_path):
@@ -257,7 +257,7 @@ def test_the_rehearse_route(tmp_path):
         svc, agent, mem, loci = _world(tmp_path)
         c.app.state.backup = BackupService(cfg.backup, svc._cluster, resolved_backup_dir(cfg))
         c.post("/api/v1/backup/pull", json={})
-        r = c.post("/api/v1/backup/rehearse", json={"service": "SerenLoci-wren", "reason": "from the route"})
+        r = c.post("/api/v1/backup/rehearse", json={"service": "SerenLoci-ada", "reason": "from the route"})
         assert r.status_code == 200 and r.json()["ok"] and r.json()["rehearsed"] == 1, r.text
         assert c.get("/api/v1/backup").json()["last_rehearsal"]["reason"] == "from the route"
         assert c.post("/api/v1/backup/restore").status_code in (404, 405), "a rehearsal is not a restore"

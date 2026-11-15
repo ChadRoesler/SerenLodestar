@@ -768,8 +768,8 @@ function fmtTime(iso) {
 }
 
 // ----------------------------------------------------------------------
-// Instance groups on a node card (design note, 16 Oct 2026): "seren-loci-wren",
-// "seren-memory-wren", "SerenObservatory-wren" ... is one install's worth
+// Instance groups on a node card (design note, 16 Oct 2026): "seren-loci-ada",
+// "seren-memory-ada", "SerenObservatory-ada" ... is one install's worth
 // of services wearing the instance name ten times. Group them under the
 // instance, collapsed by default, and show each as the app it is: loci,
 // memory, observatory. Anything without an instance suffix (llama, kokoro,
@@ -1881,7 +1881,8 @@ function initUpgrades() {
 // nothing, and its refusals come back under the field they are about.
 // ----------------------------------------------------------------------
 let _rack = null;
-const rackModal = { open: false, node: '', name: '', manifest: null, draft: {}, expert: false, result: null, busy: false };
+// unset: settings added on the box that this change takes away (a carabiner's `custom` fields).
+const rackModal = { open: false, node: '', name: '', manifest: null, draft: {}, unset: [], addError: '', expert: false, result: null, busy: false };
 
 function rackFlash(msg, type) {
     const el = document.getElementById('rack-flash');
@@ -2079,7 +2080,7 @@ async function rackBelay(id) {
 
 async function openRack(id) {
     const [node, name] = id.split('/');
-    Object.assign(rackModal, { open: true, node, name, manifest: null, draft: {}, expert: false, result: null, busy: false });
+    Object.assign(rackModal, { open: true, node, name, manifest: null, draft: {}, unset: [], addError: '', expert: false, result: null, busy: false });
     document.getElementById('rack-backdrop').classList.add('visible');
     document.getElementById('rack-body').innerHTML = '<p class="rack-help">asking the carabiner…</p>';
     document.getElementById('rack-foot').innerHTML = '';
@@ -2110,10 +2111,60 @@ function rackShown(f, v) {
     return c ? c.label : (v === '' || v == null ? '(blank)' : `${v}${f.unit ? ' ' + f.unit : ''}`);
 }
 
+// A carabiner that takes settings added on the box says so with one field of
+// kind "add": its key is the block they live under, its pattern what a name
+// looks like. A new one is sent as a change to `<key>.<name>`, like any other.
+function rackAddHtml(f, i) {
+    const id = `rack-f${i}`;
+    return `<div class="rack-field">
+      <div class="rack-field-head"><span class="rack-label">${escapeHtml(f.label || 'Add a setting')}</span>
+        <span class="rack-mono">${escapeHtml(f.key)}.name</span></div>
+      ${f.help ? `<p class="rack-help">${escapeHtml(f.help)}</p>` : ''}
+      <div class="rack-inline"><input type="text" id="${id}-name" placeholder="name" aria-label="the new setting's name" autocomplete="off">
+        <input type="text" id="${id}-value" placeholder="value" aria-label="the new setting's value" autocomplete="off">
+        <button class="upg-btn" data-rack-addsetting="${escapeHtml(f.key)}" data-from="${id}">add</button></div>
+      ${rackModal.addError ? `<p class="rack-refused">${escapeHtml(rackModal.addError)}</p>` : ''}</div>`;
+}
+
+function rackAddSetting(btn) {
+    const m = rackModal.manifest;
+    const adder = (m?.fields || []).find(x => x.kind === 'add' && x.key === btn.dataset.rackAddsetting);
+    if (!adder) return;
+    const name = (document.getElementById(btn.dataset.from + '-name')?.value || '').trim();
+    const value = document.getElementById(btn.dataset.from + '-value')?.value || '';
+    const key = `${adder.key}.${name}`;
+    let ok = false;
+    try { ok = new RegExp(`^(?:${adder.pattern || '.+'})$`).test(name); } catch (_) { ok = !!name; }
+    if (!ok) rackModal.addError = 'A name is lowercase letters, digits and _, starting with a letter.';
+    else if (m.fields.some(x => x.key === key)) rackModal.addError = `There is already a setting called ${name} here.`;
+    else {
+        rackModal.addError = '';
+        // value null: nothing on the box yet, so whatever is typed counts as a change
+        m.fields.splice(m.fields.indexOf(adder), 0,
+            { key, label: name.replace(/_/g, ' '), kind: 'text', custom: true, fresh: true, value: null, applies: 'now',
+              help: 'New: it is written to the box when you save.' });
+        rackModal.draft[key] = value;
+    }
+    renderRackModal();
+}
+
+function rackRemoveSetting(key) {
+    const m = rackModal.manifest;
+    const f = (m?.fields || []).find(x => x.key === key && x.custom);
+    if (!f) return;
+    delete rackModal.draft[key];
+    if (f.fresh) m.fields.splice(m.fields.indexOf(f), 1);          // never saved: just forget it
+    else if (rackModal.unset.includes(key)) rackModal.unset = rackModal.unset.filter(k => k !== key);
+    else rackModal.unset.push(key);
+    renderRackModal();
+}
+
 function rackFieldHtml(f, i) {
+    if (f.kind === 'add') return rackAddHtml(f, i);
     const v = rackValue(f);
     const id = `rack-f${i}`;
     const refused = rackModal.result?.refused?.[f.key];
+    const going = !!f.custom && rackModal.unset.includes(f.key);
     let control = '';
     if (f.kind === 'choice' && !f.free_text) {
         const opts = (f.choices || []).map(c => `
@@ -2147,7 +2198,11 @@ function rackFieldHtml(f, i) {
     } else if (f.kind === 'note') {
         control = `<textarea id="${id}" rows="8" data-key="${escapeHtml(f.key)}">${escapeHtml(v ?? '')}</textarea>`;
     } else {
-        control = `<input type="text" id="${id}" data-key="${escapeHtml(f.key)}" value="${escapeHtml(v ?? '')}">`;
+        control = `<input type="text" id="${id}" data-key="${escapeHtml(f.key)}" value="${escapeHtml(v ?? '')}" ${going ? 'disabled' : ''}>`;
+    }
+    if (f.custom) {
+        control = `<div class="rack-inline">${control}<button class="upg-btn" data-rack-removesetting="${escapeHtml(f.key)}">${going ? 'keep it' : 'remove'}</button></div>`
+            + (going ? '<p class="rack-help">Taken off this box when you save.</p>' : '');
     }
     const labelFor = ['number', 'note', 'text', 'folder'].includes(f.kind) ? `<label for="${id}">` : '<span class="rack-label">';
     return `<div class="rack-field">
@@ -2180,12 +2235,14 @@ function renderRackModal() {
 
 function renderRackFoot() {
     const m = rackModal.manifest;
-    const changed = (m?.fields || []).filter(rackChanged);
+    const changed = (m?.fields || []).filter(f => rackChanged(f) && !rackModal.unset.includes(f.key));
+    const going = (m?.fields || []).filter(f => rackModal.unset.includes(f.key));
     const r = rackModal.result;
     let html = '';
-    if (changed.length) {
+    if (changed.length || going.length) {
         html += changed.map(f => `<div class="rack-pending"><span>${escapeHtml(f.label)}: ${escapeHtml(rackShown(f, rackValue(f)))}</span>
-            <span>counts from the ${escapeHtml(String(f.applies || 'next_session').replace('_', ' '))}</span></div>`).join('');
+            <span>${f.applies === 'now' ? 'counts at once' : 'counts from the ' + escapeHtml(String(f.applies || 'next_session').replace('_', ' '))}</span></div>`).join('');
+        html += going.map(f => `<div class="rack-pending"><span>${escapeHtml(f.label)}</span><span>removed from this box</span></div>`).join('');
     } else if (!r) {
         html += `<div class="rack-help">Nothing changed yet. The carabiner checks every change before it counts.</div>`;
     }
@@ -2196,24 +2253,26 @@ function renderRackFoot() {
             ? 'Written, but something let go: see above.' : 'Belay on. Written: ' + escapeHtml((r.applied || []).join(', '))}</div>`;
     }
     html += `<div class="rack-foot-btns"><button class="upg-btn" id="rack-cancel">close</button>
-             <button class="upg-btn upg-go" id="rack-save" ${changed.length && !rackModal.busy ? '' : 'disabled'}>${rackModal.busy ? 'checking…' : 'save and check'}</button></div>`;
+             <button class="upg-btn upg-go" id="rack-save" ${(changed.length || going.length) && !rackModal.busy ? '' : 'disabled'}>${rackModal.busy ? 'checking…' : 'save and check'}</button></div>`;
     document.getElementById('rack-foot').innerHTML = html;
 }
 
 async function saveRack() {
     const m = rackModal.manifest;
     const values = {};
-    for (const f of (m?.fields || []).filter(rackChanged)) values[f.key] = rackValue(f);
+    const unset = [...rackModal.unset];
+    for (const f of (m?.fields || []).filter(rackChanged)) if (!unset.includes(f.key)) values[f.key] = rackValue(f);
     rackModal.busy = true;
     renderRackFoot();
     const r = await hostApi(`/api/v1/carabiner/${encodeURIComponent(rackModal.name)}/settings`,
-                            { method: 'POST', json: { node: rackModal.node, values, expert: rackModal.expert } });
+                            { method: 'POST', json: { node: rackModal.node, values, unset, expert: rackModal.expert } });
     rackModal.busy = false;
     rackModal.result = r || { ok: false, error: 'Lodestar did not answer' };
     if (r && r.ok) {
         const fresh = await hostApi(`/api/v1/carabiner/${encodeURIComponent(rackModal.name)}/settings?node=${encodeURIComponent(rackModal.node)}`);
         if (fresh) rackModal.manifest = fresh;
         rackModal.draft = {};
+        rackModal.unset = [];
         refreshRack();
     }
     renderRackModal();
@@ -2273,6 +2332,10 @@ function initRack() {
     body.addEventListener('change', rackInput);
     body.addEventListener('input', (e) => { if (e.target.matches('textarea, input[type="text"], input[type="number"]')) rackInput(e); });
     body.addEventListener('click', (e) => {
+        const addSetting = e.target.closest('[data-rack-addsetting]');
+        if (addSetting) { rackAddSetting(addSetting); return; }
+        const removeSetting = e.target.closest('[data-rack-removesetting]');
+        if (removeSetting) { rackRemoveSetting(removeSetting.dataset.rackRemovesetting); return; }
         const add = e.target.closest('[data-rack-addtool]');
         if (!add) return;
         const box = document.getElementById(add.dataset.from);
