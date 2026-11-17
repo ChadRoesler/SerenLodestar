@@ -2159,8 +2159,41 @@ function rackRemoveSetting(key) {
     renderRackModal();
 }
 
+// A field the carabiner marks readonly is shown, never edited: `readonly` is
+// true or the reason as a string (also read from `readonly_reason`), and the
+// reason stands where the input would be. It has no data-key, so nothing in
+// the draft can ever carry it back to the box.
+function rackReadonlyHtml(f) {
+    const v = f.value;
+    const reason = typeof f.readonly === 'string' ? f.readonly : (f.readonly_reason || '');
+    const shown = f.kind === 'note'
+        ? `<pre class="rack-readonly">${escapeHtml(v == null || v === '' ? '(empty)' : String(v))}</pre>`
+        : `<div class="rack-readonly">${escapeHtml(Array.isArray(v) ? (v.length ? v.join(', ') : 'nothing')
+            : ((f.choices || []).find(c => c.value === v)?.label ?? (v === '' || v == null ? '(blank)' : `${v}${f.unit ? ' ' + f.unit : ''}`)))}</div>`;
+    return `<div class="rack-field rack-field-readonly">
+      <div class="rack-field-head"><span class="rack-label">${escapeHtml(f.label)}</span>
+        <span class="rack-mono">${escapeHtml(f.key)} · read only</span></div>
+      ${f.help ? `<p class="rack-help">${escapeHtml(f.help)}</p>` : ''}
+      ${shown}
+      ${reason ? `<p class="rack-help">${escapeHtml(reason)}</p>` : ''}</div>`;
+}
+
+// Fields may carry `section` (and `section_help`): a header is drawn wherever
+// the section changes from the field before. Fields without one draw as before.
+function rackFieldsHtml(fields) {
+    let last = null;
+    return fields.map((f, i) => {
+        const head = f.section && f.section !== last
+            ? `<div class="rack-section"><h3>${escapeHtml(f.section)}</h3>${f.section_help ? `<p class="rack-help">${escapeHtml(f.section_help)}</p>` : ''}</div>`
+            : '';
+        last = f.section || null;
+        return head + rackFieldHtml(f, i);
+    }).join('');
+}
+
 function rackFieldHtml(f, i) {
     if (f.kind === 'add') return rackAddHtml(f, i);
+    if (f.readonly) return rackReadonlyHtml(f);
     const v = rackValue(f);
     const id = `rack-f${i}`;
     const refused = rackModal.result?.refused?.[f.key];
@@ -2225,10 +2258,10 @@ function renderRackModal() {
     fields.innerHTML = [['Carabiner', m.display || m.carabiner], ['Box', rackModal.node], ['Version', m.version]]
         .map(([l, v]) => `<div class="modal-header-field"><div class="modal-header-label">${escapeHtml(l)}</div>
                            <div class="modal-header-value">${escapeHtml(v || '—')}</div></div>`).join('');
-    body.innerHTML = (m.fields || []).map(rackFieldHtml).join('')
+    body.innerHTML = rackFieldsHtml(m.fields || [])
         + ((m.connections || []).length ? `<div class="rack-field"><div class="rack-field-head"><span class="rack-label">Connected to Seren</span></div>
             ${(m.connections || []).map(c => `<div class="rack-pending"><span>${escapeHtml(c.name)}</span>
-              <span class="rack-mono">${escapeHtml(c.where)} · token ${escapeHtml(c.token)}</span></div>`).join('')}
+              <span class="rack-mono">${escapeHtml(c.where)}${c.token ? ' · token ' + escapeHtml(c.token) : ''}${c.note ? ' · ' + escapeHtml(c.note) : ''}</span></div>`).join('')}
             <p class="rack-help">Keys stay on the box and are never shown here.</p></div>` : '');
     renderRackFoot();
 }

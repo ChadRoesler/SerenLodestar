@@ -1017,6 +1017,14 @@
     .rack-field-head label, .rack-field-head .rack-label { font-size: 15px; font-weight: 600; color: var(--text-hi); }
 .rack-help { font-size: 12px; color: var(--text-mid); margin: 0; }
 .rack-refused { font-size: 12px; color: var(--status-down); margin: 0; }
+.rack-readonly { margin: 0; padding: 8px 10px; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--bg-row);
+    color: var(--text-hi); font-size: 14px; }
+    pre.rack-readonly { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+        overflow-wrap: anywhere; max-height: 18em; overflow: auto; }
+.rack-section { padding: 18px 0 2px; border-top: 2px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+    .rack-section:first-child { border-top: none; padding-top: 6px; }
+    .rack-section h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-mid); }
+    .rack-section + .rack-field { border-top: none; }
 .rack-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
 .rack-choice { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-page); cursor: pointer; }
     .rack-choice.on { border-color: var(--accent); background: var(--bg-row); }
